@@ -505,8 +505,7 @@ const PREF_DEFAULTS = { view: 'office', agents: [], picked: [], names: {}, showS
 // A custom name is keyed either by folder ("dir:...") or by one conversation
 // ("sess:..."). The folder is the one worth naming — a project keeps its name
 // as new conversations open in it — and a single conversation can override it.
-const dirKey = (cwd) => 'dir:' + String(cwd || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-const validNameKey = (k) => typeof k === 'string' && /^(dir|sess):.{1,240}$/.test(k) && !Object.hasOwn(Object.prototype, k);
+const validNameKey = (k) => typeof k === 'string' && /^sess:.{1,200}$/.test(k) && !Object.hasOwn(Object.prototype, k);
 function validAgentId(v) {
   return typeof v === 'string' && v !== 'all' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(v) && !Object.hasOwn(Object.prototype, v);
 }
@@ -936,7 +935,7 @@ function baseName(s) {
 // the one worth setting, since new conversations there inherit it.
 function nameFor(s) {
   const n = state.names || {};
-  return n['sess:' + s.key] || (s.cwd && n[dirKey(s.cwd)]) || baseName(s);
+  return n['sess:' + s.key] || baseName(s);
 }
 
 // Switch the Claude desktop app to this person's conversation. The server
@@ -1166,8 +1165,7 @@ function renderPickChips() {
     `<span class="box">${CHECK}</span>${icon}<span class="lbl">${esc(name)}</span><b>${esc(note)}</b></button>`;
   const editRow = (s) => `<div class="edit" data-k="${esc(s.key)}">` +
     `<input class="rin" maxlength="24" value="${esc(nameFor(s))}" aria-label="${esc(L.rename || 'Rename')}">` +
-    `<button class="save" data-scope="dir" title="${esc(s.cwd || '')}">${esc(L.scopeDir || 'This folder')}</button>` +
-    `<button class="save" data-scope="sess">${esc(L.scopeSess || 'Just this one')}</button></div>`;
+    `<button class="save">${esc(L.saveLbl || 'Save')}</button></div>`;
   const html = chip('all', '', autoLbl, String(pool.length), auto) + pool.map((s) => {
     if (renaming === s.key) return editRow(s);
     const logo = agentLogo(s.agent) || `<span class="ini">${esc((AGENT_NAME[s.agent] || s.agent).slice(0, 2))}</span>`;
@@ -1197,15 +1195,13 @@ function redrawPicks() {
 
 // An empty name clears the override and falls back to the folder, then to the
 // folder's own name, so there is always a way back to the default.
-function saveName(key, scope) {
+function saveName(key) {
   const s = state.data.sessions.find((x) => x.key === key);
   const input = document.getElementById('pickChips').querySelector('.rin');
   if (!s || !input) return;
   const text = input.value.trim().slice(0, 24);
   const names = { ...state.names };
-  const k = scope === 'dir' && s.cwd ? dirKey(s.cwd) : 'sess:' + s.key;
-  if (text && text !== (scope === 'dir' ? baseName(s) : '')) names[k] = text; else delete names[k];
-  if (!text) delete names['sess:' + s.key];
+  if (text && text !== baseName(s)) names['sess:' + s.key] = text; else delete names['sess:' + s.key];
   state.names = names; store.set('names', names);
   renaming = null;
   redrawPicks(); renderNow();
@@ -1215,7 +1211,7 @@ document.getElementById('pickChips').addEventListener('click', (e) => {
   const ren = e.target.closest('.ren');
   if (ren) { renaming = ren.dataset.ren; redrawPicks(); return; }
   const save = e.target.closest('.save');
-  if (save) { saveName(save.closest('.edit').dataset.k, save.dataset.scope); return; }
+  if (save) { saveName(save.closest('.edit').dataset.k); return; }
   const b = e.target.closest('.chip-f'); if (!b) return;
   const v = b.dataset.v;
   // 'all' goes back to filling the office automatically; unticking the last
@@ -1228,7 +1224,7 @@ document.getElementById('pickChips').addEventListener('click', (e) => {
 });
 document.getElementById('pickChips').addEventListener('keydown', (e) => {
   if (!e.target.classList.contains('rin')) return;
-  if (e.key === 'Enter') { e.preventDefault(); saveName(e.target.closest('.edit').dataset.k, 'dir'); }
+  if (e.key === 'Enter') { e.preventDefault(); saveName(e.target.closest('.edit').dataset.k); }
   if (e.key === 'Escape') { e.preventDefault(); renaming = null; redrawPicks(); }
 });
 
