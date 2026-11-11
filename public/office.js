@@ -284,25 +284,40 @@
   // Five-pixel capitals, only the ones the walls use. A font run through
   // the pixel buffer comes out as smears; these are placed dot by dot.
   const PX_FONT = {
+    A: ['.#.', '#.#', '###', '#.#', '#.#'], W: ['#...#', '#...#', '#.#.#', '##.##', '#...#'],
     E: ['###', '#..', '##.', '#..', '###'], G: ['###', '#..', '#.#', '#.#', '###'], H: ['#.#', '#.#', '###', '#.#', '#.#'],
-    I: ['#', '#', '#', '#', '#'], M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'], N: ['#..#', '##.#', '#.##', '#..#', '#..#'],
+    I: ['#', '#', '#', '#', '#'], M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'], N: ['#...#', '##..#', '#.#.#', '#..##', '#...#'],
     P: ['###', '#.#', '###', '#..', '#..'], S: ['###', '#..', '###', '..#', '###'], T: ['###', '.#.', '.#.', '.#.', '.#.'],
     '✓': ['....#', '...#.', '#.#..', '.#...', '.....'], ' ': ['..', '..', '..', '..', '..'],
   };
-  const pxGlyph = (ch) => PX_FONT[ch] || PX_FONT[' '];
-  const pxTextWidth = (str) => [...str].reduce((w, ch) => w + pxGlyph(ch)[0].length + 1, -1);
+  // Nine-pixel capitals with two-pixel stems, for the banner. Drawn at this
+  // size rather than doubled up from the small ones, which left the
+  // diagonals too short to tell N from M.
+  const PX_BIG = {
+    A: ['..###..', '.#####.', '##...##', '##...##', '#######', '#######', '##...##', '##...##', '##...##'],
+    I: ['##', '##', '##', '##', '##', '##', '##', '##', '##'],
+    N: ['##...##', '###..##', '###..##', '####.##', '##.####', '##..###', '##..###', '##...##', '##...##'],
+    W: ['##.....##', '##.....##', '##.....##', '##..#..##', '##.###.##', '##.###.##', '####.####', '###...###', '##.....##'],
+    ' ': ['...', '...', '...', '...', '...', '...', '...', '...', '...'],
+  };
+  const pxGlyph = (ch, font = PX_FONT) => font[ch] || font[' '];
+  const pxTextWidth = (str, font = PX_FONT, gap = 1) => [...str].reduce((w, ch) => w + pxGlyph(ch, font)[0].length + gap, -gap);
   // `slope` shears the line to lie along a wall: half a pixel down per
   // pixel across on the back wall, half a pixel up on the left one.
-  function pxText(c, str, x0, y0, col, slope = 0) {
+  // `k` is the size: each dot of a glyph becomes k pixels square. The shear
+  // is still applied a pixel column at a time, so big letters lean smoothly.
+  function pxText(c, str, x0, y0, col, slope = 0, k = 1, font = PX_FONT, gap = 1) {
     c.fillStyle = col;
     let X = x0;
     for (const ch of [...str]) {
-      const g = pxGlyph(ch);
-      for (let gx = 0; gx < g[0].length; gx++, X++) {
-        const dy = Math.round(X * slope);
-        for (let gy = 0; gy < 5; gy++) if (g[gy][gx] === '#') c.fillRect(X, y0 + gy + dy, 1, 1);
+      const g = pxGlyph(ch, font);
+      for (let gx = 0; gx < g[0].length; gx++) {
+        for (let sub = 0; sub < k; sub++, X++) {
+          const dy = Math.round(X * slope);
+          for (let gy = 0; gy < g.length; gy++) if (g[gy][gx] === '#') c.fillRect(X, y0 + gy * k + dy, 1, k);
+        }
       }
-      X++;
+      X += gap * k;
     }
   }
   function pxLine(c, x0, y0, x1, y1, col) {
@@ -807,8 +822,7 @@
       poi(bx2 + 0.4, by2 + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
 
       const posters = [
-        { y: 2.2, color: '#c96442', text: 'SHIP IT' },
-        { y: 4.6, color: '#10a37f', text: 'TESTS ✓' },
+        { y: 2.2, w: 3.8, color: '#c96442', text: 'WANIN' },
       ];
       return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, gym, mats, wait, door: { x: 0.4, y: D - 1.2 } };
     }
@@ -1596,15 +1610,21 @@
       this.poly([B(sx, 1.94), B(sx + 2.0, 1.94), B(sx + 2.0, 2.36), B(sx, 2.36)], this.shade(pal.trim, pal.dark ? 30 : -70), edge);
       this.art(B(sx + 0.12, 2.3), (c) => pxText(c, 'MEETING', 0, 0, pal.dark ? '#1c1c1a' : '#f4efe6', 0.5));
 
-      // posters on the left wall, each in a paper border
+      // a long banner on the left wall: a paper border, a rule inside it top
+      // and bottom, the name in the big capitals, a pin at each end
       for (const ps of this.plan.posters) {
-        const v0 = ps.y, v1 = ps.y + 1.4;
-        this.poly([L(v0, 0.92), L(v1, 0.92), L(v1, 1.98), L(v0, 1.98)], '#f6f1e6', edge);
-        this.poly([L(v0 + 0.06, 0.98), L(v1 - 0.06, 0.98), L(v1 - 0.06, 1.92), L(v0 + 0.06, 1.92)], ps.color);
-        ps.text.split(' ').forEach((line, i) => {
-          const pad = Math.max(0, Math.round((20 - pxTextWidth(line)) / 2));
-          this.art(L(v1 - 0.06, 1.74 - i * 0.44), (c) => pxText(c, line, pad, 0, '#ffffff', -0.5));
-        });
+        const v0 = ps.y, v1 = ps.y + ps.w, z0 = 1.02, z1 = 1.98, GAP = 3, ROWS = 9;
+        this.poly([L(v0, z0), L(v1, z0), L(v1, z1), L(v0, z1)], '#f6f1e6', edge);
+        this.poly([L(v0 + 0.06, z0 + 0.06), L(v1 - 0.06, z0 + 0.06), L(v1 - 0.06, z1 - 0.06), L(v0 + 0.06, z1 - 0.06)], ps.color);
+        const rule = this.tint(ps.color, 26);
+        this.seg(L(v0 + 0.16, z1 - 0.1), L(v1 - 0.16, z1 - 0.1), rule);
+        this.seg(L(v0 + 0.16, z0 + 0.1), L(v1 - 0.16, z0 + 0.1), rule);
+        const inner = Math.round((ps.w - 0.12) * (TW / 2 / ART));
+        const pad = Math.max(0, Math.round((inner - pxTextWidth(ps.text, PX_BIG, GAP)) / 2));
+        this.art(L(v1 - 0.06, (z0 + z1) / 2 + ROWS / 2 / (TH / ART)), (c) => pxText(c, ps.text, pad, 0, '#ffffff', -0.5, 1, PX_BIG, GAP));
+        for (const v of [v0 + 0.1, v1 - 0.1]) {
+          this.art(L(v, z1 - 0.02), (c) => { c.fillStyle = '#8a6a2a'; c.fillRect(0, 0, 2, 2); c.fillStyle = '#e8cf8a'; c.fillRect(0, 0, 1, 1); });
+        }
       }
 
       // the clock's face; the hands are drawn each frame
