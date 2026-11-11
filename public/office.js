@@ -11,6 +11,20 @@
   const MAX_WANDERERS = 7;
   const SPEED = 2.1; // tiles / second
 
+  // The office is staffed by cats. One breed per session, picked from its key,
+  // so a conversation is always the same cat. At this size what reads is the
+  // coat, the ears and the face, so that is what the breeds differ in.
+  const BREEDS = [
+    { id: 'orange',  fur: '#e8913f', dark: '#bd6a1c', belly: '#f8ddba', ear: '#f0a8a8', eye: '#4e8f45', whisk: 'rgba(40,30,20,.55)', stripes: true },
+    { id: 'tuxedo',  fur: '#30303a', dark: '#17171d', belly: '#f3f3ef', ear: '#9c7676', eye: '#d8b63c', whisk: 'rgba(255,255,255,.8)' },
+    { id: 'calico',  fur: '#f5f0e7', dark: '#cfc5b4', belly: '#ffffff', ear: '#f0b8b8', eye: '#d8b63c', whisk: 'rgba(40,30,20,.5)', patches: true },
+    { id: 'black',   fur: '#27272d', dark: '#131317', belly: '#35353d', ear: '#7a5c5c', eye: '#dcbb3e', whisk: 'rgba(255,255,255,.8)' },
+    { id: 'white',   fur: '#f4f2eb', dark: '#d6d2c6', belly: '#ffffff', ear: '#f3b9b9', eye: '#6fa8d6', whisk: 'rgba(40,30,20,.5)' },
+    { id: 'russian', fur: '#8d97a3', dark: '#67717e', belly: '#b3bcc6', ear: '#b08e8e', eye: '#74c078', whisk: 'rgba(255,255,255,.75)' },
+    { id: 'siamese', fur: '#e9dec8', dark: '#4a3a33', belly: '#f7f0e2', ear: '#4a3a33', eye: '#6fa8d6', whisk: 'rgba(40,30,20,.5)', mask: true },
+    { id: 'ragdoll', fur: '#f0e7d9', dark: '#6b5a52', belly: '#fbf7ef', ear: '#6b5a52', eye: '#5b8fd0', whisk: 'rgba(40,30,20,.45)', mask: true },
+  ];
+
   const SKIN = ['#f3cfb0', '#e5b38f', '#c98d66', '#9a6646', '#6e4630', '#f7dcc7'];
   const HAIR = ['#2a2019', '#4b3020', '#8a4b2a', '#c99a5b', '#1c1c1c', '#8c8c8c', '#a33a2c', '#3d3550'];
   const SHIRT = {
@@ -558,6 +572,7 @@
         key: s.key, h, s,
         skin: pick(SKIN, h, 3), hair: pick(HAIR, h, 7), pants: pick(PANTS, h, 13),
         shirt: pick(SHIRT[s.agent] || SHIRT.claude, h, 11),
+        breed: pick(BREEDS, h, 3),
         hairStyle: h % 4,
         phase: (h % 1000) / 1000 * Math.PI * 2,
         x: door.x, y: door.y,
@@ -1214,21 +1229,58 @@
       c.translate(x, y);
       c.scale(sc, sc);
 
-      c.fillStyle = p.pants;
+      const br = p.breed || BREEDS[0];
+      const fur = br.fur;
+      const furDark = br.dark;
+
+      // Tail first, so it sits behind the body. It swings while walking and
+      // only drifts while standing or sitting.
+      {
+        const sway = Math.sin(t * (moving ? 6 : 1.6) + p.phase) * (moving ? 3.2 : 1.4);
+        const root = seated ? -3 : -8;
+        c.strokeStyle = fur;
+        c.lineWidth = 3;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.moveTo(5, root);
+        c.quadraticCurveTo(12 + sway, root - 2, 12.5 + sway, root - 11);
+        c.stroke();
+        if (br.stripes) {
+          c.strokeStyle = furDark;
+          c.lineWidth = 1.2;
+          c.beginPath(); c.moveTo(10.5 + sway * 0.8, root - 4); c.lineTo(13.5 + sway * 0.8, root - 4.6); c.stroke();
+          c.beginPath(); c.moveTo(11 + sway, root - 8); c.lineTo(14 + sway, root - 8.4); c.stroke();
+        }
+        c.lineCap = 'butt';
+      }
+
+      c.fillStyle = fur;
       if (seated) {
         c.fillRect(-5, -4, 4, 5);
         c.fillRect(1, -4, 4, 5);
       } else {
         c.fillRect(-5, -10, 4, 10 + step * 2);
         c.fillRect(1, -10, 4, 10 - step * 2);
-        c.fillStyle = '#2a2a2a';
-        c.fillRect(-5, -1 + step, 4, 2);
-        c.fillRect(1, -1 - step, 4, 2);
+        c.fillStyle = furDark; // back paws
+        c.fillRect(-5, -1.5 + step, 4, 2.5);
+        c.fillRect(1, -1.5 - step, 4, 2.5);
       }
       const hip = seated ? -4 : -10;
-      this.roundRect(-7, hip - 13, 14, 14, 3, p.shirt);
-      const arm = this.shade(p.shirt, -18);
-      const hand = (hx, hy) => { c.fillStyle = p.skin; c.beginPath(); c.arc(hx, hy, 2.2, 0, Math.PI * 2); c.fill(); };
+      this.roundRect(-7, hip - 13, 14, 14, 3, fur);
+      this.roundRect(-4, hip - 8, 8, 9, 3, br.belly); // chest and belly
+      if (br.stripes) {
+        c.fillStyle = furDark;
+        c.fillRect(-7, hip - 11.5, 3.2, 1.4);
+        c.fillRect(3.8, hip - 11.5, 3.2, 1.4);
+        c.fillRect(-7, hip - 7.5, 3.2, 1.4);
+        c.fillRect(3.8, hip - 7.5, 3.2, 1.4);
+      }
+      if (br.patches) {
+        c.fillStyle = '#e8913f'; c.fillRect(-7, hip - 13, 4.5, 5.5);
+        c.fillStyle = '#30303a'; c.fillRect(3.5, hip - 6.5, 3.5, 6.5);
+      }
+      const arm = this.shade(fur, -18);
+      const hand = (hx, hy) => { c.fillStyle = furDark; c.beginPath(); c.arc(hx, hy, 2.4, 0, Math.PI * 2); c.fill(); };
       c.fillStyle = arm;
       const sip = Math.sin(t * 0.9 + p.phase) > 0.6;
       switch (st.act) {
@@ -1302,28 +1354,93 @@
 
       const napping = st.act === 'nap';
       const hy = hip - 20 + (napping ? 7 : 0) + (st.act === 'think' ? Math.sin(t * 1.5 + p.phase) * 0.6 : 0);
-      c.fillStyle = p.skin;
+      // Ears go in before the head so their bases disappear under it. They flick
+      // back when the cat is asleep.
+      const earY = hy - 5.2;
+      const earDrop = napping ? 2.6 : 0;
+      const ear = (cx, lean) => {
+        c.beginPath();
+        c.moveTo(cx - 3.4, earY + 2);
+        c.lineTo(cx + lean, earY - 6.6 + earDrop);
+        c.lineTo(cx + 3.4, earY + 1.6);
+        c.closePath();
+      };
+      c.fillStyle = br.mask ? br.dark : fur;
+      ear(-4.6, -1.2); c.fill();
+      ear(4.6, 1.2); c.fill();
+      if (front) {
+        c.fillStyle = br.ear;
+        const inner = (cx, lean) => {
+          c.beginPath();
+          c.moveTo(cx - 1.7, earY + 1.2);
+          c.lineTo(cx + lean * 0.6, earY - 3.4 + earDrop);
+          c.lineTo(cx + 1.7, earY + 1);
+          c.closePath();
+        };
+        inner(-4.6, -1.2); c.fill();
+        inner(4.6, 1.2); c.fill();
+      }
+
+      c.fillStyle = fur;
       c.beginPath(); c.arc(0, hy, 7, 0, Math.PI * 2); c.fill();
-      c.fillStyle = p.hair;
-      if (front && !napping) {
-        c.beginPath(); c.arc(0, hy - 1.5, 7.3, Math.PI * 1.05, Math.PI * 1.95); c.fill();
-        if (p.hairStyle === 1) { c.fillRect(-7.3, hy - 2, 2.5, 8); c.fillRect(4.8, hy - 2, 2.5, 8); }
-        if (p.hairStyle === 2) { c.beginPath(); c.arc(0, hy - 8, 3.2, 0, Math.PI * 2); c.fill(); }
-        c.fillStyle = '#2a2018';
+      // Cheek tufts, so the head reads as a cat even from behind.
+      c.beginPath(); c.moveTo(-6.6, hy + 0.5); c.lineTo(-8.8, hy + 2.6); c.lineTo(-5.6, hy + 3.4); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(6.6, hy + 0.5); c.lineTo(8.8, hy + 2.6); c.lineTo(5.6, hy + 3.4); c.closePath(); c.fill();
+
+      if (front) {
+        if (br.mask) {
+          c.fillStyle = br.dark;
+          c.beginPath(); c.ellipse(0, hy + 1.6, 5, 4.6, 0, 0, Math.PI * 2); c.fill();
+        }
+        if (br.stripes) {
+          c.fillStyle = furDark;
+          c.fillRect(-4.6, hy - 6.4, 1.3, 3.2);
+          c.fillRect(-0.65, hy - 7, 1.3, 3.6);
+          c.fillRect(3.3, hy - 6.4, 1.3, 3.2);
+        }
+        if (br.patches) {
+          c.fillStyle = '#e8913f';
+          c.beginPath(); c.arc(-3.6, hy - 2.6, 3.4, 0, Math.PI * 2); c.fill();
+          c.fillStyle = '#30303a';
+          c.beginPath(); c.arc(4, hy - 3.4, 2.6, 0, Math.PI * 2); c.fill();
+        }
+
         const sleepy = s.status === 'idle';
         const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
-        c.fillRect(-3, hy - 0.5, 1.6, blink || sleepy ? 0.7 : 2);
-        c.fillRect(1.6, hy - 0.5, 1.6, blink || sleepy ? 0.7 : 2);
-        c.strokeStyle = '#2a2018'; c.lineWidth = 1;
-        if (p.mode === 'wander' && !sleepy) {
-          c.beginPath(); c.arc(0, hy + 2.2, 2, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
-        } else if (s.status === 'error' && p.mode === 'work') {
-          c.beginPath(); c.arc(0, hy + 4.5, 2, 1.15 * Math.PI, 1.85 * Math.PI); c.stroke();
+        const shut = blink || sleepy || napping;
+        if (shut) {
+          c.strokeStyle = '#241c16'; c.lineWidth = 1;
+          c.beginPath(); c.arc(-2.5, hy - 0.6, 1.7, 0.12 * Math.PI, 0.88 * Math.PI); c.stroke();
+          c.beginPath(); c.arc(2.5, hy - 0.6, 1.7, 0.12 * Math.PI, 0.88 * Math.PI); c.stroke();
+        } else {
+          c.fillStyle = br.eye;
+          c.beginPath(); c.ellipse(-2.5, hy - 0.4, 1.9, 2.1, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(2.5, hy - 0.4, 1.9, 2.1, 0, 0, Math.PI * 2); c.fill();
+          // Slit pupils, wide when something is wrong.
+          const slit = s.status === 'error' ? 1.9 : 1;
+          c.fillStyle = '#17171b';
+          c.beginPath(); c.ellipse(-2.5, hy - 0.4, slit * 0.55, 2, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(2.5, hy - 0.4, slit * 0.55, 2, 0, 0, Math.PI * 2); c.fill();
         }
-      } else {
-        c.beginPath(); c.arc(0, hy - 0.5, 7.2, 0, Math.PI * 2); c.fill();
-        if (p.hairStyle === 2) { c.beginPath(); c.arc(0, hy - 7, 3.2, 0, Math.PI * 2); c.fill(); }
-        if (p.hairStyle === 1) c.fillRect(-6, hy, 12, 8);
+
+        c.fillStyle = br.belly;
+        c.beginPath(); c.ellipse(0, hy + 3.6, 3.8, 2.5, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = br.ear;
+        c.beginPath(); c.moveTo(-1.2, hy + 2.2); c.lineTo(1.2, hy + 2.2); c.lineTo(0, hy + 3.5); c.closePath(); c.fill();
+        c.strokeStyle = '#2a2018'; c.lineWidth = 0.8;
+        c.beginPath(); c.arc(-1, hy + 3.8, 1.1, 0, Math.PI * 0.85); c.stroke();
+        c.beginPath(); c.arc(1, hy + 3.8, 1.1, Math.PI * 0.15, Math.PI); c.stroke();
+
+        c.strokeStyle = br.whisk; c.lineWidth = 0.7;
+        for (const dy of [-0.6, 1.2]) {
+          c.beginPath(); c.moveTo(-4, hy + 3 + dy); c.lineTo(-9.6, hy + 1.8 + dy); c.stroke();
+          c.beginPath(); c.moveTo(4, hy + 3 + dy); c.lineTo(9.6, hy + 1.8 + dy); c.stroke();
+        }
+      } else if (br.stripes) {
+        c.fillStyle = furDark;
+        c.fillRect(-4.6, hy - 6.4, 1.3, 4.6);
+        c.fillRect(-0.65, hy - 7, 1.3, 5.2);
+        c.fillRect(3.3, hy - 6.4, 1.3, 4.6);
       }
       if (st.act === 'arcade' || st.act === 'beanbag') {
         c.strokeStyle = '#222'; c.lineWidth = 2;
