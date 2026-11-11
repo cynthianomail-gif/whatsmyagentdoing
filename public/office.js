@@ -281,6 +281,13 @@
     lift: '🏋️', treadmill: '🏃', wheel: '🌀', yoga: '🧘', box: '📦', sun: '☀️',
   };
 
+  // A mug five pixels wide, standing on the origin.
+  function pxMug(c, col, drink = '#6b3f22') {
+    c.fillStyle = INK_HEX; c.fillRect(-2, -5, 5, 6); c.fillRect(3, -4, 2, 3);
+    c.fillStyle = col; c.fillRect(-1, -4, 3, 4); c.fillRect(3, -3, 1, 1);
+    c.fillStyle = drink; c.fillRect(-1, -4, 3, 1);
+  }
+
   // ---- What the gym reads off a session ----------------------------------
   const ctxPct = (s) => (s && s.context && s.context.used ? Math.min(1, s.context.used / (s.context.window || 200000)) : 0);
   // Steps on a log scale: a quiet day and a heavy one are orders apart.
@@ -559,7 +566,8 @@
 
       // ---- open office extras
       const rx = OW - 1.15;
-      add(rx + 0.35 + 0.5, () => this.serverRack(rx, 0.2), true);
+      add(rx + 0.35 + 0.5, () => this.serverRack(rx, 0.2));
+      add(rx + 0.35 + 0.51, () => this.rackLights(rx, 0.2), true);
       prop('rack', { x: rx, y: 0.2 });
       prop('printer', { x: OW - 2.3, y: 0.25 });
       solid(rx, 0.2, 0.7, 0.6);
@@ -591,17 +599,20 @@
       // ---- front corner: vending machines, foosball, phone booth
       const fy = OD + 3.7;
       if (gy - fy >= 1.7) {
-        add(0.5 + fy + 0.4, () => this.vending(0.12, fy, '#c0392b'), true);
+        add(0.5 + fy + 0.4, () => this.vending(0.12, fy, '#c0392b'));
+        add(0.5 + fy + 0.41, () => this.vendingLight(0.12, fy), true);
         prop('vending', { x: 0.12, y: fy, color: '#c0392b' });
         prop('vending', { x: 0.12, y: fy + 0.8, color: '#2f6fb0' });
-        add(0.5 + fy + 1.2, () => this.vending(0.12, fy + 0.8, '#2f6fb0'), true);
+        add(0.5 + fy + 1.2, () => this.vending(0.12, fy + 0.8, '#2f6fb0'));
+        add(0.5 + fy + 1.21, () => this.vendingLight(0.12, fy + 0.8), true);
         solid(0.1, fy, 0.75, 1.55);
         poi(1.3, fy + 0.4, 'vending', 'back');
         poi(1.3, fy + 1.2, 'vending', 'back');
       }
       if (gy - fy >= 1.5) {
         const fx = 3.0, fby = fy + 0.4;
-        add(fx + 0.8 + fby + 0.4, () => this.foosball(fx, fby), true);
+        add(fx + 0.8 + fby + 0.4, () => this.foosball(fx, fby));
+        add(fx + 0.8 + fby + 0.41, () => this.foosRods(fx, fby), true);
         prop('foosball', { x: fx, y: fby });
         solid(fx, fby, 1.6, 0.8, 0.05);
         poi(fx - 0.45, fby + 0.4, 'foosball', 'side', { pair: 'fb' });
@@ -696,11 +707,13 @@
       prop('sink', { x: mx + 3.9, y: cy + 0.12 });
       prop('fridge', { x: W - 1.15, y: cy });
       prop('cooler', { x: mx + 0.35, y: cy + 0.05 });
-      add(mx + 2.65 + cy + 0.35, () => this.coffeeMachine(mx + 2.4, cy + 0.12), true);
+      add(mx + 2.65 + cy + 0.35, () => this.coffeeMachine(mx + 2.4, cy + 0.12));
+      add(mx + 2.65 + cy + 0.36, () => this.coffeeLight(mx + 2.4, cy + 0.12), true);
       add(mx + 4.15 + cy + 0.35, () => this.sink(mx + 3.9, cy + 0.12));
       add(W - 0.75 + cy + 0.4, () => this.fridge(W - 1.15, cy));
       solid(W - 1.15, cy, 0.85, 0.75);
-      add(mx + 0.55 + cy + 0.25, () => this.waterCooler(mx + 0.35, cy + 0.05), true);
+      add(mx + 0.55 + cy + 0.25, () => this.waterCooler(mx + 0.35, cy + 0.05));
+      add(mx + 0.55 + cy + 0.26, () => this.coolerBubble(mx + 0.35, cy + 0.05), true);
       solid(mx + 0.3, cy, 0.5, 0.5);
       poi(mx + 2.65, cy + 1.2, 'coffee', 'back');
       poi(mx + 4.15, cy + 1.2, 'sink', 'back');
@@ -740,7 +753,8 @@
       poi(lx + 0.4, ly + 3.6, 'beanbag', 'front', { sit: 0.18 });
       poi(lx + 2.6, ly + 3.6, 'beanbag', 'front', { sit: 0.18 });
       const ax = W - 1.2, ay = ly + 1.0;
-      add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay), true);
+      add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
+      add(ax + 0.35 + ay + 0.36, () => this.arcadeScreen(ax, ay), true);
       prop('arcade', { x: ax, y: ay });
       prop('plant', { x: W - 0.5, y: D - 0.5 });
       prop('rug', { x: OW + 0.3, y: PY + 0.6, w: 4.0, d: D - PY - 1.0 });
@@ -1598,24 +1612,47 @@
     }
 
     serverRack(x, y) {
+      const P = (a, b, c) => this.iso(a, b, c);
       this.box(x, y, 0, 0.7, 0.6, 1.9, '#3a3d44', '#24262b', '#1b1d21');
-      const c = this.ctx;
+      // rack units on the face we see, a vent down the side
+      for (let r = 0; r < 8; r++) {
+        const z = 1.78 - r * 0.22;
+        this.poly([P(x + 0.06, y + 0.6, z - 0.15), P(x + 0.64, y + 0.6, z - 0.15), P(x + 0.64, y + 0.6, z), P(x + 0.06, y + 0.6, z)], r % 3 === 2 ? '#2b2e34' : '#30333a');
+        this.seg(P(x + 0.06, y + 0.6, z), P(x + 0.64, y + 0.6, z), '#474b54');
+      }
+      for (let v = 0.12; v < 0.5; v += 0.1) this.seg(P(x + 0.7, y + v, 0.3), P(x + 0.7, y + v, 1.6), '#121316');
+    }
+
+    rackLights(x, y) {
       const busy = this.deskOf.size;
       for (let r = 0; r < 7; r++) {
         for (let k = 0; k < 4; k++) {
           const on = Math.sin(this.t / (180 + r * 37 + k * 53) + r * k) > 0.2 && (r * 4 + k) < Math.max(4, busy * 3);
-          const p = this.iso(x + 0.12 + k * 0.13, y + 0.6, 1.7 - r * 0.22);
-          c.fillStyle = on ? (k % 3 === 0 ? '#ffb347' : '#5cf08a') : '#2f3a33';
-          c.fillRect(p.x - 1, p.y - 1, 2.5, 2);
+          this.art(this.iso(x + 0.14 + k * 0.125, y + 0.6, 1.72 - r * 0.22), (c) => {
+            c.fillStyle = on ? (k % 3 === 0 ? '#ffb347' : '#5cf08a') : '#2f3a33';
+            c.fillRect(0, 0, 1, 1);
+          });
         }
       }
     }
 
     printer(x, y) {
       const pal = this.pal;
+      const P = (a, b, c) => this.iso(a, b, c);
       this.box(x, y, 0, 0.75, 0.55, 0.55, pal.deskTop, pal.deskL, pal.deskR);
-      this.box(x + 0.05, y + 0.05, 0.55, 0.65, 0.45, 0.28, '#e8e8e8', '#c8c8c8', '#b3b3b3');
-      this.box(x + 0.15, y + 0.35, 0.83, 0.45, 0.15, 0.02, '#ffffff', '#eee', '#ddd');
+      // cabinet doors
+      this.seg(P(x + 0.375, y + 0.55, 0.05), P(x + 0.375, y + 0.55, 0.5), this.tint(pal.deskL, -26));
+      this.art(P(x + 0.3, y + 0.55, 0.3), (c) => { c.fillStyle = this.tint(pal.deskL, -44); c.fillRect(0, 0, 1, 2); c.fillRect(3, 1, 1, 2); });
+      // the printer: body, paper drawer, a slot with a sheet coming out
+      this.box(x + 0.05, y + 0.05, 0.55, 0.65, 0.45, 0.28, '#e8e8e8', '#cfcfd2', '#b6b6ba');
+      this.seg(P(x + 0.08, y + 0.5, 0.63), P(x + 0.67, y + 0.5, 0.63), '#9c9ca2');
+      this.poly([P(x + 0.15, y + 0.5, 0.7), P(x + 0.6, y + 0.5, 0.7), P(x + 0.6, y + 0.5, 0.76), P(x + 0.15, y + 0.5, 0.76)], '#3a3d44');
+      this.poly([P(x + 0.2, y + 0.5, 0.74), P(x + 0.55, y + 0.5, 0.74), P(x + 0.55, y + 0.72, 0.7), P(x + 0.2, y + 0.72, 0.7)], '#ffffff', '#c9c9cc');
+      this.seg(P(x + 0.26, y + 0.58, 0.725), P(x + 0.48, y + 0.58, 0.725), '#b9bcc4');
+      this.seg(P(x + 0.26, y + 0.64, 0.715), P(x + 0.42, y + 0.64, 0.715), '#b9bcc4');
+      // control panel on top
+      this.poly([P(x + 0.45, y + 0.1, 0.83), P(x + 0.66, y + 0.1, 0.83), P(x + 0.66, y + 0.3, 0.83), P(x + 0.45, y + 0.3, 0.83)], '#3a3d44');
+      this.art(P(x + 0.52, y + 0.2, 0.83), (c) => { c.fillStyle = '#7be08a'; c.fillRect(0, 0, 1, 1); c.fillStyle = '#9fd8ff'; c.fillRect(2, 0, 2, 1); });
     }
 
     pingpong(x, y) {
@@ -1628,88 +1665,232 @@
 
     meetingTable(x, y) {
       const pal = this.pal;
-      this.box(x + 0.3, y + 0.5, 0, 0.12, 0.4, 0.7, pal.deskL, pal.deskL, pal.deskR);
-      this.box(x + 2.6, y + 0.5, 0, 0.12, 0.4, 0.7, pal.deskL, pal.deskL, pal.deskR);
-      this.box(x, y, 0.7, 3.0, 1.4, 0.08, this.shade(pal.deskTop, 12), pal.deskL, pal.deskR);
-      this.box(x + 1.2, y + 0.45, 0.78, 0.5, 0.35, 0.03, '#2a2a2e', '#222', '#1a1a1a');
-      this.box(x + 0.4, y + 0.3, 0.78, 0.2, 0.28, 0.02, '#fff', '#eee', '#ddd');
-      this.box(x + 2.2, y + 0.8, 0.78, 0.12, 0.12, 0.12, '#f2f2f2', '#d0d0d0', '#bbb');
+      const P = (a, b, c) => this.iso(a, b, c);
+      const top = this.shade(pal.deskTop, 12);
+      for (const lx of [x + 0.3, x + 2.58]) {
+        this.box(lx, y + 0.3, 0, 0.12, 0.8, 0.06, pal.deskL, pal.deskL, pal.deskR);
+        this.box(lx, y + 0.62, 0.06, 0.12, 0.16, 0.64, pal.deskL, pal.deskL, pal.deskR);
+      }
+      this.box(x, y, 0.7, 3.0, 1.4, 0.08, top, pal.deskL, pal.deskR);
+      // boards along the top
+      for (const v of [0.47, 0.93]) this.seg(P(x + 0.02, y + v, 0.78), P(x + 2.98, y + v, 0.78), this.tint(top, -14));
+      // an open laptop, its screen toward us
+      this.box(x + 1.2, y + 0.55, 0.78, 0.5, 0.35, 0.02, '#3a3d44', '#2a2c31', '#1f2024');
+      this.poly([P(x + 1.2, y + 0.55, 0.8), P(x + 1.7, y + 0.55, 0.8), P(x + 1.7, y + 0.5, 1.1), P(x + 1.2, y + 0.5, 1.1)], '#2a2c31', '#17181b');
+      this.poly([P(x + 1.24, y + 0.55, 0.84), P(x + 1.66, y + 0.55, 0.84), P(x + 1.66, y + 0.51, 1.06), P(x + 1.24, y + 0.51, 1.06)], '#8fc7ff');
+      this.seg(P(x + 1.28, y + 0.54, 0.99), P(x + 1.5, y + 0.54, 0.99), '#ffffff');
+      this.seg(P(x + 1.28, y + 0.54, 0.93), P(x + 1.6, y + 0.54, 0.93), '#dff0ff');
+      // minutes, a sheet somebody pushed aside, two cups, and the speaker
+      // everyone leans toward
+      this.poly([P(x + 0.35, y + 0.3, 0.785), P(x + 0.6, y + 0.3, 0.785), P(x + 0.6, y + 0.62, 0.785), P(x + 0.35, y + 0.62, 0.785)], '#ffffff', '#cfd2d6');
+      for (const v of [0.38, 0.45, 0.52]) this.seg(P(x + 0.39, y + v, 0.785), P(x + 0.55, y + v, 0.785), '#aeb4bd');
+      this.poly([P(x + 0.5, y + 0.72, 0.785), P(x + 0.78, y + 0.8, 0.785), P(x + 0.72, y + 1.07, 0.785), P(x + 0.45, y + 0.99, 0.785)], '#fff7d6', '#d9cf9f');
+      this.art(P(x + 2.3, y + 0.9, 0.78), (c) => pxMug(c, '#f2f2f2'));
+      this.art(P(x + 0.98, y + 1.05, 0.78), (c) => pxMug(c, '#c96442'));
+      this.art(P(x + 2.0, y + 0.4, 0.78), (c) => {
+        pxDisc(c, 0, -1, 3, 2, '#1f2024');
+        c.fillStyle = '#4a4e57'; c.fillRect(-1, -2, 3, 1);
+        c.fillStyle = '#7be08a'; c.fillRect(0, -1, 1, 1);
+      });
     }
 
     stool(x, y, h, color) {
-      this.box(x - 0.04, y - 0.04, 0, 0.08, 0.08, h, '#555', '#444', '#333');
+      this.art(this.iso(x, y, 0), (c) => pxDisc(c, 0, 0, 3, 1, '#34363a'));
+      this.box(x - 0.04, y - 0.04, 0, 0.08, 0.08, h, '#6a6a6a', '#555', '#3c3c3c');
       this.box(x - 0.2, y - 0.2, h, 0.4, 0.4, 0.07, this.shade(color, 18), color, this.shade(color, -18));
     }
 
     roundTable(x, y) {
-      const c = this.ctx;
-      this.box(x - 0.05, y - 0.05, 0, 0.1, 0.1, 0.72, '#555', '#444', '#333');
-      const p = this.iso(x, y, 0.75);
-      c.fillStyle = this.shade(this.pal.deskTop, -15);
-      c.beginPath(); c.ellipse(p.x, p.y + 3, 30, 15, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = this.shade(this.pal.deskTop, 15);
-      c.beginPath(); c.ellipse(p.x, p.y, 30, 15, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#fff';
-      c.beginPath(); c.ellipse(p.x + 8, p.y - 2, 5, 2.5, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#e6b35c';
-      c.beginPath(); c.arc(p.x + 8, p.y - 3, 2, 0, Math.PI * 2); c.fill();
+      const top = this.shade(this.pal.deskTop, 15), rim = this.shade(this.pal.deskTop, -20);
+      this.art(this.iso(x, y, 0), (c) => pxDisc(c, 0, 0, 6, 3, '#34363a'));
+      this.box(x - 0.05, y - 0.05, 0, 0.1, 0.1, 0.72, '#6a6a6a', '#555', '#3c3c3c');
+      this.art(this.iso(x, y, 0.75), (c) => {
+        pxDisc(c, 0, 2, 15, 7, rim);
+        pxDisc(c, 0, 0, 15, 7, top);
+        // the lit rim on the far side
+        c.fillStyle = this.tint(top, 16);
+        c.fillRect(-7, -7, 15, 1);
+        // a plate with something on it, and a cup
+        pxDisc(c, 5, -1, 4, 2, '#cfd4da');
+        pxDisc(c, 5, -2, 3, 1, '#ffffff');
+        c.fillStyle = '#c98a3c'; c.fillRect(4, -4, 3, 2);
+        c.fillStyle = '#f0c27a'; c.fillRect(4, -4, 2, 1);
+        c.translate(-7, 3);
+        pxMug(c, '#7d93c4');
+      });
     }
 
     coffeeMachine(x, y) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const m = this.pal.metal;
+      // body with a steel band, a recess where the cup stands, beans on top
       this.box(x, y, 0.9, 0.5, 0.45, 0.6, '#555b63', '#3a3f45', '#2e3237');
-      this.box(x + 0.15, y + 0.42, 1.0, 0.2, 0.05, 0.15, '#222', '#111', '#111');
-      const p = this.iso(x + 0.4, y + 0.45, 1.35);
-      this.ctx.fillStyle = Math.sin(this.t / 400) > 0 ? '#ff6b4a' : '#7a3a2a';
-      this.ctx.fillRect(p.x, p.y, 2.5, 2.5);
-      this.box(x + 0.6, y + 0.1, 0.9, 0.14, 0.14, 0.14, '#fff', '#ddd', '#ccc');
+      this.poly([P(x, y + 0.45, 1.36), P(x + 0.5, y + 0.45, 1.36), P(x + 0.5, y + 0.45, 1.44), P(x, y + 0.45, 1.44)], m);
+      this.poly([P(x + 0.08, y + 0.45, 0.98), P(x + 0.42, y + 0.45, 0.98), P(x + 0.42, y + 0.45, 1.3), P(x + 0.08, y + 0.45, 1.3)], '#1c1e22');
+      this.box(x + 0.2, y + 0.42, 1.2, 0.1, 0.06, 0.1, m, this.tint(m, -20), this.tint(m, -36));
+      this.box(x + 0.05, y + 0.45, 0.9, 0.4, 0.1, 0.03, this.tint(m, -14), this.tint(m, -34), this.tint(m, -46));
+      this.art(P(x + 0.25, y + 0.5, 0.93), (c) => pxMug(c, '#ffffff'));
+      this.box(x + 0.12, y + 0.1, 1.5, 0.26, 0.24, 0.2, '#a9764a', '#7a5334', '#63432a');
+      // cups stacked beside it
+      this.box(x + 0.6, y + 0.12, 0.9, 0.14, 0.14, 0.2, '#ffffff', '#dcdcdc', '#c6c6c6');
+      this.seg(P(x + 0.6, y + 0.26, 1.0), P(x + 0.74, y + 0.26, 1.0), '#b0b0b0');
+    }
+
+    coffeeLight(x, y) {
+      const on = Math.sin(this.t / 400) > 0;
+      this.art(this.iso(x + 0.44, y + 0.45, 1.4), (c) => { c.fillStyle = on ? '#ff6b4a' : '#7a3a2a'; c.fillRect(0, 0, 1, 1); });
+      // steam off the cup
+      const k = (this.t / 900) % 1;
+      this.art(this.iso(x + 0.25, y + 0.5, 0.93), (c) => {
+        c.fillStyle = 'rgba(255,255,255,.75)';
+        c.fillRect(k < 0.5 ? 0 : 1, -7 - Math.floor(k * 4), 1, 1);
+        c.fillRect(k < 0.5 ? 1 : 0, -9 - Math.floor(k * 4), 1, 1);
+      });
     }
 
     sink(x, y) {
-      this.box(x, y + 0.05, 0.9, 0.55, 0.4, 0.02, '#9aa3ad', '#7d858e', '#6c737b');
-      this.box(x + 0.22, y + 0.02, 0.92, 0.06, 0.06, 0.3, this.pal.metal, this.pal.metal, '#888');
-      this.box(x + 0.22, y + 0.02, 1.2, 0.06, 0.2, 0.04, this.pal.metal, this.pal.metal, '#888');
+      const P = (a, b, c) => this.iso(a, b, c);
+      const m = this.pal.metal;
+      this.box(x, y + 0.05, 0.9, 0.55, 0.4, 0.02, '#aab2bb', '#7d858e', '#6c737b');
+      // the basin, darker toward the wall, and its drain
+      this.poly([P(x + 0.06, y + 0.12, 0.92), P(x + 0.49, y + 0.12, 0.92), P(x + 0.49, y + 0.4, 0.92), P(x + 0.06, y + 0.4, 0.92)], '#5d646c', '#474c53');
+      this.seg(P(x + 0.06, y + 0.12, 0.92), P(x + 0.49, y + 0.12, 0.92), '#3d4248', 0, 1);
+      this.art(P(x + 0.27, y + 0.27, 0.92), (c) => { c.fillStyle = '#2b2e33'; c.fillRect(0, 0, 1, 1); });
+      this.box(x + 0.24, y + 0.03, 0.92, 0.06, 0.06, 0.3, this.tint(m, 20), m, this.tint(m, -30));
+      this.box(x + 0.24, y + 0.03, 1.2, 0.06, 0.22, 0.04, this.tint(m, 20), m, this.tint(m, -30));
+      // soap and a sponge
+      this.art(P(x + 0.52, y + 0.1, 0.92), (c) => {
+        c.fillStyle = INK_HEX; c.fillRect(-1, -5, 3, 6);
+        c.fillStyle = '#5fc08a'; c.fillRect(0, -3, 1, 3);
+        c.fillStyle = '#e8e8e8'; c.fillRect(0, -4, 1, 1);
+      });
+      this.art(P(x + 0.52, y + 0.38, 0.92), (c) => {
+        c.fillStyle = '#4f9a5a'; c.fillRect(-1, -2, 3, 1);
+        c.fillStyle = '#e9c46a'; c.fillRect(-1, -1, 3, 1);
+      });
     }
 
     fridge(x, y) {
-      this.box(x, y, 0, 0.85, 0.75, 1.95, '#eef1f4', '#cfd5db', '#bcc3ca');
       const P = (a, b, c) => this.iso(a, b, c);
-      this.poly([P(x, y + 0.75, 1.25), P(x + 0.85, y + 0.75, 1.25), P(x + 0.85, y + 0.75, 1.27), P(x, y + 0.75, 1.27)], '#9aa3ad');
-      this.poly([P(x + 0.7, y + 0.75, 1.4), P(x + 0.73, y + 0.75, 1.4), P(x + 0.73, y + 0.75, 1.75), P(x + 0.7, y + 0.75, 1.75)], '#888');
-      for (const [mx, mz, col] of [[0.2, 1.6, '#c96442'], [0.4, 1.45, '#3b8ee0'], [0.3, 0.9, '#5f9a4c']]) {
-        const p = P(x + mx, y + 0.75, mz);
-        this.ctx.fillStyle = col; this.ctx.fillRect(p.x, p.y, 4, 4);
+      const F = (u, z) => P(x + u, y + 0.75, z);
+      this.box(x, y, 0, 0.85, 0.75, 1.95, '#eef1f4', '#cfd5db', '#bcc3ca');
+      // two doors with the gap between them, a lit edge down the hinge side
+      this.poly([F(0, 1.24), F(0.85, 1.24), F(0.85, 1.28), F(0, 1.28)], '#8f98a2');
+      this.seg(F(0.03, 0.08), F(0.03, 1.22), '#e6eaee');
+      this.seg(F(0.03, 1.3), F(0.03, 1.9), '#e6eaee');
+      for (const [z0, z1] of [[1.36, 1.8], [0.7, 1.16]]) {
+        this.poly([F(0.7, z0), F(0.76, z0), F(0.76, z1), F(0.7, z1)], '#7a828b');
+        this.seg(F(0.7, z0), F(0.7, z1), '#f6f8fa');
       }
+      // what ends up on a fridge door: magnets, a note, a drawing of a fish
+      for (const [u, z, col] of [[0.2, 1.62, '#c96442'], [0.42, 1.5, '#3b8ee0'], [0.52, 1.72, '#e0a83a']]) {
+        this.art(F(u, z), (c) => { c.fillStyle = col; c.fillRect(0, 0, 2, 2); });
+      }
+      this.poly([F(0.12, 0.88), F(0.32, 0.88), F(0.32, 1.12), F(0.12, 1.12)], '#fff7c2', '#d9cf9f');
+      for (const z of [0.96, 1.02]) this.seg(F(0.16, z), F(0.28, z), '#b9ad74');
+      this.art(F(0.21, 1.12), (c) => { c.fillStyle = '#5f9a4c'; c.fillRect(0, 0, 2, 2); });
+      this.poly([F(0.4, 0.82), F(0.6, 0.82), F(0.6, 1.04), F(0.4, 1.04)], '#ffffff', '#c9ced6');
+      this.art(F(0.47, 0.94), (c) => {
+        c.fillStyle = '#e8913f'; c.fillRect(0, 0, 3, 2); c.fillRect(-1, 0, 1, 1); c.fillRect(-1, 1, 1, 1);
+        c.fillStyle = '#241f1c'; c.fillRect(2, 0, 1, 1);
+      });
+      // kick plate, vents low on the side
+      this.poly([F(0, 0), F(0.85, 0), F(0.85, 0.06), F(0, 0.06)], '#7d858e');
+      for (const z of [0.12, 0.18, 0.24]) this.seg(P(x + 0.85, y + 0.12, z), P(x + 0.85, y + 0.62, z), '#a3abb3');
+      // a cereal box and a plant on top
+      this.box(x + 0.1, y + 0.2, 1.95, 0.3, 0.2, 0.28, '#f0b24a', '#e9a03b', '#c98428');
+      this.art(P(x + 0.62, y + 0.4, 1.95), (c) => {
+        c.fillStyle = this.pal.pot; c.fillRect(-2, -2, 4, 2);
+        pxLump(c, 0, -5, 3, 3, this.rampOf(this.pal.plant), this.tint(this.pal.plant, -58));
+      });
     }
 
     waterCooler(x, y) {
-      this.box(x, y, 0, 0.42, 0.42, 0.95, '#e8ecef', '#cfd5db', '#bcc3ca');
-      const c = this.ctx;
-      const p = this.iso(x + 0.21, y + 0.21, 0.95);
-      c.fillStyle = 'rgba(120,180,240,.6)';
-      c.beginPath(); c.ellipse(p.x, p.y - 9, 8, 11, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = 'rgba(255,255,255,.5)';
-      c.fillRect(p.x - 4, p.y - 16, 2, 10);
+      const P = (a, b, c) => this.iso(a, b, c);
+      const F = (u, z) => P(x + u, y + 0.42, z);
+      this.box(x, y, 0, 0.42, 0.42, 0.95, '#eef1f4', '#cfd5db', '#bcc3ca');
+      // the recess with its two taps and the drip tray under them
+      this.poly([F(0.06, 0.5), F(0.36, 0.5), F(0.36, 0.78), F(0.06, 0.78)], '#aab3bc');
+      this.poly([F(0.06, 0.46), F(0.36, 0.46), F(0.36, 0.5), F(0.06, 0.5)], '#5f666e');
+      this.art(F(0.14, 0.72), (c) => { c.fillStyle = '#3b8ee0'; c.fillRect(0, 0, 1, 2); });
+      this.art(F(0.28, 0.72), (c) => { c.fillStyle = '#de4b40'; c.fillRect(0, 0, 1, 2); });
+      // the bottle
+      const blue = this.rampOf(this.pal.dark ? '#5d93c4' : '#8fc3f0');
+      const edge = this.tint(blue[2], -62);
+      this.art(P(x + 0.21, y + 0.21, 0.95), (c) => {
+        c.fillStyle = edge; c.fillRect(-2, -3, 5, 3);
+        c.fillStyle = blue[1]; c.fillRect(-1, -2, 3, 2);
+        pxLump(c, 0, -9, 4, 6, blue, edge);
+        c.fillStyle = '#ffffff'; c.fillRect(-2, -12, 1, 4);
+      });
+      // paper cups on the side
+      this.box(x + 0.42, y + 0.12, 0.55, 0.06, 0.12, 0.25, '#ffffff', '#e2e2e2', '#cfcfcf');
+    }
+
+    coolerBubble(x, y) {
       const k = (this.t / 1800) % 1;
-      c.fillStyle = 'rgba(255,255,255,.85)';
-      c.beginPath(); c.arc(p.x + 2, p.y - 2 - k * 16, 1.2, 0, Math.PI * 2); c.fill();
-      const tap = this.iso(x + 0.21, y + 0.42, 0.65);
-      c.fillStyle = '#3b8ee0'; c.fillRect(tap.x - 1.5, tap.y, 3, 3);
+      this.art(this.iso(x + 0.21, y + 0.21, 0.95), (c) => {
+        c.fillStyle = 'rgba(255,255,255,.9)';
+        c.fillRect(1, -5 - Math.floor(k * 8), 1, 1);
+        if (k > 0.4) c.fillRect(-1, -4 - Math.floor((k - 0.4) * 8), 1, 1);
+      });
     }
 
     couch(x, y) {
       const pal = this.pal;
-      this.box(x, y - 0.05, 0.32, 2.8, 0.25, 0.42, this.shade(pal.couch, 10), pal.couchD, this.shade(pal.couchD, -12));
-      this.box(x, y, 0, 2.8, 0.8, 0.32, pal.couch, pal.couchD, this.shade(pal.couchD, -12));
-      this.box(x - 0.15, y - 0.05, 0, 0.18, 0.85, 0.52, this.shade(pal.couch, 6), pal.couchD, this.shade(pal.couchD, -12));
-      this.box(x + 2.8, y - 0.05, 0, 0.18, 0.85, 0.52, this.shade(pal.couch, 6), pal.couchD, this.shade(pal.couchD, -12));
-      this.box(x + 2.15, y + 0.12, 0.32, 0.35, 0.16, 0.28, '#e9c46a', '#d4ae52', '#c19c43');
+      const P = (a, b, c) => this.iso(a, b, c);
+      const front = pal.couchD, side = this.shade(pal.couchD, -12);
+      const seam = this.tint(pal.couchD, -24), hi = this.tint(pal.couch, 22);
+      for (const fx of [x - 0.1, x + 2.82]) this.box(fx, y + 0.68, 0, 0.08, 0.08, 0.07, '#3a2f28', '#2e2520', '#241d19');
+      this.box(x, y - 0.05, 0.3, 2.8, 0.25, 0.5, this.shade(pal.couch, 12), front, side);
+      this.box(x, y, 0.06, 2.8, 0.8, 0.28, this.shade(pal.couch, 6), front, side);
+      // Three cushions: a seam across the seat and down its front, and up
+      // the back, with a button in the middle of each back cushion.
+      for (let k = 1; k < 3; k++) {
+        const sx = x + (2.8 / 3) * k;
+        this.seg(P(sx, y + 0.2, 0.34), P(sx, y + 0.8, 0.34), seam);
+        this.seg(P(sx, y + 0.8, 0.34), P(sx, y + 0.8, 0.08), seam);
+        this.seg(P(sx, y + 0.2, 0.8), P(sx, y + 0.2, 0.36), seam);
+      }
+      this.seg(P(x, y + 0.8, 0.34), P(x + 2.8, y + 0.8, 0.34), hi);
+      this.seg(P(x, y + 0.2, 0.8), P(x + 2.8, y + 0.2, 0.8), hi);
+      for (let k = 0; k < 3; k++) {
+        this.art(P(x + 0.47 + k * 0.93, y + 0.2, 0.58), (c) => { c.fillStyle = seam; c.fillRect(0, 0, 1, 1); });
+      }
+      for (const ax of [x - 0.16, x + 2.78]) {
+        this.box(ax, y - 0.05, 0.06, 0.18, 0.85, 0.5, this.shade(pal.couch, 10), front, side);
+        this.seg(P(ax, y + 0.8, 0.56), P(ax + 0.18, y + 0.8, 0.56), hi);
+      }
+      // a throw over one arm, a pillow at each end
+      const throwCol = pal.dark ? '#b9a27a' : '#f1e3c4';
+      this.poly([P(x - 0.16, y + 0.25, 0.565), P(x + 0.02, y + 0.25, 0.565), P(x + 0.02, y + 0.6, 0.565), P(x - 0.16, y + 0.6, 0.565)], throwCol);
+      this.poly([P(x - 0.16, y + 0.8, 0.2), P(x - 0.16, y + 0.8, 0.565), P(x - 0.16, y + 0.6, 0.565), P(x - 0.16, y + 0.25, 0.565), P(x - 0.16, y + 0.25, 0.2)], throwCol);
+      for (const [px, col] of [[x + 2.4, '#e9c46a'], [x + 0.42, '#c96442']]) {
+        this.art(P(px, y + 0.34, 0.34), (c) => {
+          pxLump(c, 0, -3, 5, 3, this.rampOf(col), this.tint(col, -70));
+          c.fillStyle = this.tint(col, -30); c.fillRect(-1, -3, 3, 1);
+        });
+      }
     }
 
     coffeeTable(x, y) {
       const pal = this.pal;
-      this.box(x, y, 0, 1.6, 0.7, 0.3, this.shade(pal.deskTop, -10), pal.deskL, pal.deskR);
-      this.box(x + 0.2, y + 0.15, 0.3, 0.35, 0.25, 0.06, '#c96442', '#a85336', '#8f462e');
-      this.box(x + 1.1, y + 0.3, 0.3, 0.12, 0.12, 0.12, '#fff', '#ddd', '#ccc');
+      const P = (a, b, c) => this.iso(a, b, c);
+      const top = this.shade(pal.deskTop, -6);
+      // a top on four legs with a shelf under it, rather than a block
+      for (const [lx, ly] of [[0.04, 0.04], [1.48, 0.04], [0.04, 0.58], [1.48, 0.58]]) this.box(x + lx, y + ly, 0, 0.08, 0.08, 0.24, pal.deskL, pal.deskL, pal.deskR);
+      this.box(x + 0.06, y + 0.06, 0.08, 1.48, 0.58, 0.03, this.shade(pal.deskTop, -22), pal.deskR, this.shade(pal.deskR, -12));
+      this.box(x, y, 0.24, 1.6, 0.7, 0.06, top, pal.deskL, pal.deskR);
+      // a magazine, a mug, and a bowl of something for the cats
+      this.poly([P(x + 0.18, y + 0.14, 0.305), P(x + 0.55, y + 0.14, 0.305), P(x + 0.55, y + 0.44, 0.305), P(x + 0.18, y + 0.44, 0.305)], '#c96442', '#8f462e');
+      this.seg(P(x + 0.23, y + 0.22, 0.305), P(x + 0.5, y + 0.22, 0.305), '#ffe9d6');
+      this.seg(P(x + 0.23, y + 0.3, 0.305), P(x + 0.42, y + 0.3, 0.305), '#f0b8a0');
+      this.art(P(x + 0.85, y + 0.5, 0.3), (c) => pxMug(c, '#ffffff'));
+      this.art(P(x + 1.25, y + 0.3, 0.3), (c) => {
+        pxDisc(c, 0, -1, 4, 2, '#3b6ea8');
+        pxDisc(c, 0, -2, 3, 1, '#e8913f');
+        c.fillStyle = '#f6c98a'; c.fillRect(-1, -3, 1, 1); c.fillRect(1, -2, 1, 1);
+      });
     }
 
     beanbag(x, y, color) {
@@ -1748,16 +1929,46 @@
     }
 
     arcade(x, y) {
-      this.box(x, y, 0, 0.7, 0.7, 1.75, '#3a2a6a', '#2b1f52', '#221843');
       const P = (a, b, c) => this.iso(a, b, c);
-      const hue = (this.t / 20) % 360;
-      this.poly([P(x + 0.1, y + 0.7, 1.0), P(x + 0.6, y + 0.7, 1.0), P(x + 0.6, y + 0.7, 1.45), P(x + 0.1, y + 0.7, 1.45)], `hsl(${hue},70%,55%)`);
-      const blip = this.iso(x + 0.25 + 0.2 * Math.sin(this.t / 300), y + 0.7, 1.2);
-      this.ctx.fillStyle = '#fff'; this.ctx.fillRect(blip.x, blip.y, 3, 3);
-      this.poly([P(x, y + 0.7, 1.55), P(x + 0.7, y + 0.7, 1.55), P(x + 0.7, y + 0.7, 1.72), P(x, y + 0.7, 1.72)], '#ffcf4a');
-      this.box(x, y + 0.7, 0.8, 0.7, 0.2, 0.08, '#4a3a8a', '#3a2a6a', '#2b1f52');
-      const j = this.iso(x + 0.25, y + 0.8, 0.88);
-      this.ctx.fillStyle = '#e04a4a'; this.ctx.beginPath(); this.ctx.arc(j.x, j.y - 3, 2.5, 0, Math.PI * 2); this.ctx.fill();
+      const F = (u, z) => P(x + u, y + 0.7, z);
+      const body = '#3a2a6a', L = '#2b1f52', R = '#221843';
+      this.box(x, y, 0, 0.7, 0.7, 1.75, body, L, R);
+      // side art: two stripes up the cabinet's flank
+      this.poly([P(x + 0.7, y + 0.1, 0.2), P(x + 0.7, y + 0.3, 0.2), P(x + 0.7, y + 0.6, 1.6), P(x + 0.7, y + 0.4, 1.6)], '#5a44a8');
+      this.poly([P(x + 0.7, y + 0.36, 0.2), P(x + 0.7, y + 0.42, 0.2), P(x + 0.7, y + 0.68, 1.45), P(x + 0.7, y + 0.62, 1.45)], '#ffcf4a');
+      // marquee, the bezel the screen sits in, the coin door
+      this.poly([F(0, 1.55), F(0.7, 1.55), F(0.7, 1.72), F(0, 1.72)], '#ffcf4a');
+      this.seg(F(0.08, 1.64), F(0.3, 1.64), '#de4b40');
+      this.seg(F(0.38, 1.64), F(0.62, 1.64), '#de4b40');
+      this.poly([F(0.06, 0.96), F(0.64, 0.96), F(0.64, 1.49), F(0.06, 1.49)], '#15102e');
+      this.poly([F(0.2, 0.25), F(0.5, 0.25), F(0.5, 0.6), F(0.2, 0.6)], '#1d1638', '#4a3a8a');
+      this.art(F(0.35, 0.46), (c) => { c.fillStyle = '#ffcf4a'; c.fillRect(0, 0, 1, 2); });
+      // control panel: a stick and two buttons
+      this.box(x, y + 0.7, 0.8, 0.7, 0.2, 0.08, '#4a3a8a', body, L);
+      this.art(P(x + 0.22, y + 0.8, 0.88), (c) => {
+        c.fillStyle = INK_HEX; c.fillRect(0, -3, 1, 3);
+        c.fillStyle = '#e04a4a'; c.fillRect(-1, -5, 3, 2);
+      });
+      this.art(P(x + 0.45, y + 0.82, 0.88), (c) => {
+        c.fillStyle = '#ffcf4a'; c.fillRect(0, -1, 1, 1);
+        c.fillStyle = '#5ce0f0'; c.fillRect(2, 0, 1, 1);
+      });
+    }
+
+    // The game on the arcade's screen: two rows of invaders, a ship, a shot.
+    arcadeScreen(x, y) {
+      const F = (u, z) => this.iso(x + u, y + 0.7, z);
+      const t = this.t / 1000;
+      this.poly([F(0.1, 1.0), F(0.6, 1.0), F(0.6, 1.45), F(0.1, 1.45)], `hsl(${(this.t / 30) % 360},45%,22%)`);
+      const px = (u, z, col) => this.art(F(u, z), (c) => { c.fillStyle = col; c.fillRect(0, 0, 1, 1); });
+      const shift = Math.round(Math.sin(t * 1.5) * 1.4) * 0.06;
+      for (let k = 0; k < 3; k++) {
+        px(0.2 + k * 0.125 + shift, 1.38, '#7be08a');
+        px(0.2 + k * 0.125 - shift, 1.28, '#ff8fb1');
+      }
+      const ship = 0.33 + Math.round(Math.sin(t * 2.3) * 2) * 0.06;
+      px(ship, 1.08, '#ffffff');
+      px(ship, 1.12 + ((t * 1.6) % 1) * 0.12, '#ffe66b');
     }
 
     floorLamp(x, y) {
@@ -1790,39 +2001,69 @@
     }
 
     vending(x, y, color) {
-      this.box(x, y, 0, 0.7, 0.75, 1.85, this.shade(color, 15), this.shade(color, -10), color);
       const P = (a, b, c) => this.iso(a, b, c);
-      const fx = x + 0.7;
-      this.poly([P(fx, y + 0.08, 0.7), P(fx, y + 0.55, 0.7), P(fx, y + 0.55, 1.7), P(fx, y + 0.08, 1.7)], 'rgba(20,30,40,.75)');
+      const V = (v, z) => P(x + 0.7, y + v, z);
+      const dark = this.shade(color, -30);
+      this.box(x, y, 0, 0.7, 0.75, 1.85, this.shade(color, 15), this.shade(color, -10), color);
+      // brand strip across the top, kick plate at the bottom
+      this.poly([V(0, 1.68), V(0.75, 1.68), V(0.75, 1.82), V(0, 1.82)], this.shade(color, 34));
+      this.seg(V(0.12, 1.75), V(0.42, 1.75), '#ffffff');
+      this.poly([V(0, 0), V(0.75, 0), V(0.75, 0.12), V(0, 0.12)], dark);
+      // the window: four shelves of cans behind glass
+      this.poly([V(0.06, 0.62), V(0.54, 0.62), V(0.54, 1.62), V(0.06, 1.62)], '#16202a');
       const cols = ['#f2d16b', '#5cf08a', '#ff8a65', '#81d4fa', '#ce93d8'];
       for (let r = 0; r < 4; r++) {
-        for (let k = 0; k < 3; k++) {
-          const q = P(fx, y + 0.15 + k * 0.14, 1.55 - r * 0.23);
-          this.ctx.fillStyle = cols[(r * 3 + k + Math.round(y)) % cols.length];
-          this.ctx.fillRect(q.x - 1.5, q.y - 4, 3, 5);
+        const z = 1.42 - r * 0.24;
+        this.seg(V(0.07, z - 0.03), V(0.53, z - 0.03), '#3b4a58');
+        for (let k = 0; k < 4; k++) {
+          const col = cols[(r * 3 + k + Math.round(y)) % cols.length];
+          this.art(V(0.1 + k * 0.125, z), (c) => {
+            c.fillStyle = col; c.fillRect(0, -2, 1, 3);
+            c.fillStyle = '#ffffff'; c.fillRect(0, -3, 1, 1);
+          });
         }
       }
-      this.poly([P(fx, y + 0.1, 0.25), P(fx, y + 0.5, 0.25), P(fx, y + 0.5, 0.45), P(fx, y + 0.1, 0.45)], '#222');
-      const glow = P(fx, y + 0.65, 1.2);
-      this.ctx.fillStyle = Math.sin(this.t / 700 + y) > 0 ? '#9ef' : '#4ad';
-      this.ctx.fillRect(glow.x - 1, glow.y - 3, 2, 6);
+      this.seg(V(0.1, 1.22), V(0.2, 1.58), 'rgba(255,255,255,.3)');
+      // buttons down the side, the tray the can drops into
+      this.poly([V(0.58, 0.9), V(0.71, 0.9), V(0.71, 1.55), V(0.58, 1.55)], dark);
+      for (let k = 0; k < 4; k++) this.art(V(0.64, 1.45 - k * 0.13), (c) => { c.fillStyle = '#e8edf2'; c.fillRect(0, 0, 1, 1); });
+      this.poly([V(0.08, 0.2), V(0.52, 0.2), V(0.52, 0.48), V(0.08, 0.48)], '#11161b');
+      this.seg(V(0.08, 0.48), V(0.52, 0.48), '#5a6874');
+      // a paler band down the side we see edge-on
+      this.poly([P(x + 0.25, y + 0.75, 0.3), P(x + 0.45, y + 0.75, 0.3), P(x + 0.45, y + 0.75, 1.5), P(x + 0.25, y + 0.75, 1.5)], this.shade(color, 6));
+    }
+
+    vendingLight(x, y) {
+      const on = Math.sin(this.t / 700 + y) > 0;
+      this.art(this.iso(x + 0.7, y + 0.64, 0.98), (c) => { c.fillStyle = on ? '#99eeff' : '#44aadd'; c.fillRect(0, -1, 1, 2); });
     }
 
     foosball(x, y) {
+      const P = (a, b, c) => this.iso(a, b, c);
       for (const [lx, ly] of [[0.1, 0.1], [1.42, 0.1], [0.1, 0.62], [1.42, 0.62]]) this.box(x + lx, y + ly, 0, 0.08, 0.08, 0.6, '#5a4030', '#5a4030', '#4a3428');
-      this.box(x, y, 0.6, 1.6, 0.8, 0.25, '#2f8a4a', '#6e533b', '#5c4431');
+      this.box(x, y, 0.6, 1.6, 0.8, 0.25, '#6e533b', '#6e533b', '#5c4431');
+      // the pitch inside its wooden rim: halfway line, a goal at each end
+      this.poly([P(x + 0.07, y + 0.07, 0.85), P(x + 1.53, y + 0.07, 0.85), P(x + 1.53, y + 0.73, 0.85), P(x + 0.07, y + 0.73, 0.85)], '#2f8a4a', '#246b39');
+      this.seg(P(x + 0.8, y + 0.08, 0.85), P(x + 0.8, y + 0.72, 0.85), '#bfe8c8');
+      for (const gx of [x + 0.07, x + 1.45]) {
+        this.poly([P(gx, y + 0.28, 0.85), P(gx + 0.08, y + 0.28, 0.85), P(gx + 0.08, y + 0.52, 0.85), P(gx, y + 0.52, 0.85)], '#1a2a20');
+      }
+    }
+
+    // Rods and players, which slide when two cats are at the table.
+    foosRods(x, y) {
       const P = (a, b, c) => this.iso(a, b, c);
       const players = this.plan && this.plan.pois.filter((q) => q.pair === 'fb' && q.taken).length === 2;
       for (let k = 0; k < 6; k++) {
         const rx = x + 0.2 + k * 0.24;
-        const shift = players ? Math.sin(this.t / 120 + k) * 0.06 : 0;
-        const a = P(rx, y - 0.15, 0.82), b = P(rx, y + 0.95, 0.82);
-        this.ctx.strokeStyle = '#c8ccd0'; this.ctx.lineWidth = 1.2;
-        this.ctx.beginPath(); this.ctx.moveTo(a.x, a.y); this.ctx.lineTo(b.x, b.y); this.ctx.stroke();
+        const shift = players ? Math.round(Math.sin(this.t / 120 + k) * 2) * 0.03 : 0;
+        this.seg(P(rx, y - 0.15, 0.92), P(rx, y + 0.95, 0.92), '#c8ccd0');
+        this.art(P(rx, y + 0.95 + shift, 0.92), (c) => { c.fillStyle = '#2a2a2e'; c.fillRect(-1, -1, 2, 2); });
         for (let m = 0; m < 2; m++) {
-          const q = P(rx, y + 0.25 + m * 0.3 + shift, 0.82);
-          this.ctx.fillStyle = k % 2 ? '#c0392b' : '#2f6fb0';
-          this.ctx.fillRect(q.x - 1.5, q.y - 3, 3, 6);
+          this.art(P(rx, y + 0.25 + m * 0.3 + shift, 0.92), (c) => {
+            c.fillStyle = k % 2 ? '#c0392b' : '#2f6fb0'; c.fillRect(-1, -1, 2, 3);
+            c.fillStyle = '#f3cfb0'; c.fillRect(-1, -2, 2, 1);
+          });
         }
       }
     }
@@ -2001,9 +2242,18 @@
         this.poly([P(x, y, 0), P(x + 1.3, y, 0), P(x + 1.3, y, H), P(x, y, H)], pal.dark ? '#3c4a5a' : '#9fb3c8');
         this.poly([P(x, y, 0), P(x, y + 1.3, 0), P(x, y + 1.3, H), P(x, y, H)], pal.dark ? '#34404e' : '#8ea3b8');
         this.poly([P(x + 0.02, y + 0.02), P(x + 1.28, y + 0.02), P(x + 1.28, y + 1.28), P(x + 0.02, y + 1.28)], pal.dark ? '#2a323b' : '#d8dee5');
-        const lamp = P(x + 0.65, y + 0.65, H - 0.05);
-        this.ctx.fillStyle = 'rgba(255,230,160,.9)';
-        this.ctx.beginPath(); this.ctx.ellipse(lamp.x, lamp.y, 8, 4, 0, 0, Math.PI * 2); this.ctx.fill();
+        const felt = pal.dark ? '#2e3946' : '#8497ac';
+        for (const u of [0.43, 0.87]) {
+          this.seg(P(x + u, y, 0.1), P(x + u, y, H - 0.1), felt);
+          this.seg(P(x, y + u, 0.1), P(x, y + u, H - 0.1), felt);
+        }
+        this.art(P(x + 0.65, y + 0.65, H - 0.05), (c) => { pxDisc(c, 0, 0, 4, 2, '#ffe6a0'); pxDisc(c, 0, 0, 2, 1, '#fff8dc'); });
+        this.box(x + 0.08, y + 0.04, 0.85, 0.5, 0.22, 0.04, pal.deskTop, pal.deskL, pal.deskR);
+        this.art(P(x + 0.3, y + 0.15, 0.89), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-2, -3, 5, 3);
+          c.fillStyle = '#4a4e57'; c.fillRect(-1, -2, 3, 1);
+          c.fillStyle = '#7be08a'; c.fillRect(1, -2, 1, 1);
+        });
         this.stool(x + 0.65, y + 0.6, 0.43, '#c96442');
       });
       add(x + 1.3 + y + 0.65 + 0.3, () => {
