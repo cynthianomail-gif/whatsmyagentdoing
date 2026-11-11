@@ -5,6 +5,7 @@
   const S = {
     en: {
       settings: "Settings", scene: "Scene", agents: "Agents", language: "Language",
+      pickTitle: "Who is in the office", pickAuto: "Auto",
       showAgent: "Agent badges",
       pip: "Pop out",
       pipClose: "Close pop-out",
@@ -28,6 +29,7 @@
     },
     'zh-TW': {
       settings: "設定", scene: "場景", agents: "顯示哪些 Agent", language: "語言",
+      pickTitle: "辦公室成員", pickAuto: "自動",
       showAgent: "Agent 標記",
       pip: "子母畫面",
       pipClose: "關閉子母畫面",

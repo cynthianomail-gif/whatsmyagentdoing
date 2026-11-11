@@ -415,6 +415,13 @@
           <div class="pick-list" id="agentChips" role="group"></div>
         </div>
       </details>
+      <details class="settings menu" id="pickMenu">
+        <summary class="btn" aria-controls="pickPanel" id="pickSummary"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h5.5M4 12h5.5M4 17.5h5.5"/><path d="M12.8 6.6l1.9 1.9 4.3-4.3"/><path d="M12.8 17.1l1.9 1.9 4.3-4.3"/></svg><span id="pickName"></span></summary>
+        <div class="settings-panel list-panel" id="pickPanel">
+          <div class="setting-label" id="pickLabel"></div>
+          <div class="pick-list" id="pickChips" role="group"></div>
+        </div>
+      </details>
       <details class="settings menu" id="langMenu">
         <summary class="btn" aria-controls="langPanel" data-a="language"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2M12 3.2c2.6 2.6 3.7 5.6 3.7 8.8s-1.1 6.2-3.7 8.8M12 3.2C9.4 5.8 8.3 8.8 8.3 12s1.1 6.2 3.7 8.8"/></svg><span id="langName"></span></summary>
         <div class="settings-panel list-panel" id="langPanel">
@@ -508,9 +515,13 @@ const store = (() => {
   return { get, set };
 })();
 
-const PREF_DEFAULTS = { view: 'office', quality: 'mid', scene: 'office', agents: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, lang: 'auto' };
+const PREF_DEFAULTS = { view: 'office', quality: 'mid', scene: 'office', agents: [], picked: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, lang: 'auto' };
 function validAgentId(v) {
   return typeof v === 'string' && v !== 'all' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(v) && !Object.hasOwn(Object.prototype, v);
+}
+// A hand-picked session is stored by its server-side key, `${agent}:${id}`.
+function validSessionKey(v) {
+  return typeof v === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}:[A-Za-z0-9._-]{1,128}$/.test(v) && !Object.hasOwn(Object.prototype, v);
 }
 function validPreference(k, v) {
   if (!Object.hasOwn(PREF_DEFAULTS, k)) return false;
@@ -519,6 +530,8 @@ function validPreference(k, v) {
   if (k === 'quality') return ['mid', 'high'].includes(v);
   // Which agents to show; none selected means all of them.
   if (k === 'agents') return Array.isArray(v) && v.length <= 32 && v.every(validAgentId);
+  // Hand-picked sessions; none picked means the office fills itself as before.
+  if (k === 'picked') return Array.isArray(v) && v.length <= 64 && v.every(validSessionKey);
   if (k === 'lang') return v === 'auto' || Object.hasOwn(I18N, v);
   return typeof v === 'string' && /^[a-z0-9-]+$/.test(v);
 }
@@ -713,7 +726,9 @@ function render() {
   const officeMode = state.view === 'office' || state.full;
   document.getElementById('officeWrap').style.display = officeMode ? '' : 'none';
   // The office decides who sits at a desk and who wanders around.
-  const officeList = all;
+  // With sessions hand-picked, only those become staff; with none picked the
+  // office fills itself from everything in the window, as it always did.
+  const officeList = state.picked.length ? all.filter((s) => state.picked.includes(s.key)) : all;
   const poppedOut = !!popout?.win;
   // Wait for the first snapshot so people start at their places instead of
   // all walking in through the door.
@@ -1200,11 +1215,51 @@ document.getElementById('agentChips').addEventListener('click', (e) => {
   syncControls(); renderNow();
 });
 
+// Office cast: pick exactly which sessions walk in as staff. Nothing picked
+// means the office fills itself from the window, which is how it used to work.
+function renderPickChips() {
+  // Sorted by name, never by activity: a list that reshuffles while you read it
+  // moves the checkbox out from under the pointer and you tick the wrong session.
+  const label = (s) => s.project || s.title || s.id || s.key;
+  const pool = state.data.sessions
+    .filter((s) => matchAgent(s) && (state.showSub || !s.subagent))
+    .slice()
+    .sort((a, b) => label(a).localeCompare(label(b)) || a.key.localeCompare(b.key));
+  const auto = !state.picked.length;
+  const title = L.pickTitle || 'Who is in the office';
+  const autoLbl = L.pickAuto || 'Auto';
+  const row = (v, icon, name, note, on) => `<button class="chip-f${on ? ' on' : ''}" data-v="${esc(v)}" aria-pressed="${on}" title="${esc(name)}">` +
+    `<span class="box">${CHECK}</span>${icon}<span class="lbl">${esc(name)}</span><b>${esc(note)}</b></button>`;
+  const html = row('all', '', autoLbl, String(pool.length), auto) + pool.map((s) => {
+    const logo = agentLogo(s.agent) || `<span class="ini">${esc((AGENT_NAME[s.agent] || s.agent).slice(0, 2))}</span>`;
+    return row(s.key, logo, label(s), L[s.status] || s.status || '', !auto && state.picked.includes(s.key));
+  }).join('');
+  const box = document.getElementById('pickChips');
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+  document.getElementById('pickLabel').textContent = title;
+  const sum = document.getElementById('pickSummary');
+  sum.setAttribute('aria-label', title); sum.title = title;
+  document.getElementById('pickName').textContent = auto ? autoLbl : String(state.picked.length);
+  document.getElementById('pickMenu').classList.toggle('active', !auto);
+}
+document.getElementById('pickChips').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip-f'); if (!b) return;
+  const v = b.dataset.v;
+  // 'all' goes back to filling the office automatically; unticking the last
+  // hand-picked session does the same.
+  const next = v === 'all' ? []
+    : state.picked.includes(v) ? state.picked.filter((x) => x !== v)
+    : [...state.picked, v];
+  state.picked = next; store.set('picked', next);
+  syncControls(); renderNow();
+});
+
 // Set when the person changes a filter: the list follows at once even under the pointer.
 let rowsNow = false;
 function renderNow() { rowsNow = true; try { render(); } finally { rowsNow = false; } }
 function renderSide() {
   renderChips();
+  renderPickChips();
   if (!state.full) return;
   syncFull();
   const now = Date.now() - state.skew;
