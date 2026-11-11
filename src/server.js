@@ -3,6 +3,7 @@
 const fs = require('fs');
 const http = require('http');
 const { guessFromPrompts } = require('./lang');
+const desktop = require('./desktop');
 const path = require('path');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -73,6 +74,12 @@ function view(s, now, { privacy }) {
     lastEventAt: s.lastEventAt || s.mtime,
     startedAt: s.startedAt,
   };
+  // Clicking a person jumps to that conversation in the Claude desktop app.
+  // Only whole Claude Code sessions on this machine have one; a subagent is
+  // not a window of its own, and the other clients are not the desktop app.
+  if (s.agent === 'claude' && !s.subagent && s.source !== 'magpie') {
+    out.deepLink = desktop.linkFor(s.cwd, out.lastEventAt);
+  }
   if (s.agent === 'omp' && s.source !== 'magpie') {
     out.ompProfile = s.ompProfile || null;
     // OMP subagents can't be resumed on their own.

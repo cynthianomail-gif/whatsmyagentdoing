@@ -438,6 +438,7 @@
             <label class="tog" id="agentBadgeToggle"><span data-t="showAgent"></span><input type="checkbox" role="switch" id="showAgent"></label>
             <label class="tog" id="soundToggle"><span data-t="sound"></span><input type="checkbox" role="switch" id="sound"></label>
             <label class="tog" id="notifyToggle"><span data-t="notify"></span><input type="checkbox" role="switch" id="notify"></label>
+            <label class="tog" id="jumpToggle"><span id="jumpLabel"></span><input type="checkbox" role="switch" id="jump"></label>
           </div>
           <p class="tog-note" id="notifyNote" data-t="notifyBlocked" hidden></p>
         </div>
@@ -515,7 +516,7 @@ const store = (() => {
   return { get, set };
 })();
 
-const PREF_DEFAULTS = { view: 'office', quality: 'mid', scene: 'office', agents: [], picked: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, lang: 'auto' };
+const PREF_DEFAULTS = { view: 'office', quality: 'mid', scene: 'office', agents: [], picked: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, jump: true, lang: 'auto' };
 function validAgentId(v) {
   return typeof v === 'string' && v !== 'all' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(v) && !Object.hasOwn(Object.prototype, v);
 }
@@ -879,8 +880,13 @@ soundBox.addEventListener('change', () => {
 });
 showAgent.addEventListener('change', () => { state.showAgent = showAgent.checked; store.set('showAgent', state.showAgent); syncControls(); render(); });
 
+const jumpBox = document.getElementById('jump');
+jumpBox.addEventListener('change', () => { state.jump = jumpBox.checked; store.set('jump', state.jump); });
+
 const notifyBtn = document.getElementById('notify');
 function syncControls() {
+  jumpBox.checked = state.jump;
+  document.getElementById('jumpLabel').textContent = L.jump || 'Click opens the desktop app';
   const view = state.full ? 'office' : state.view;
   document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.view));
   document.querySelectorAll('#qualSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.quality));
@@ -935,11 +941,25 @@ function refreshTip() {
   placeTip();
 }
 function hideTip() { tipKey = null; tipPinned = false; tip.style.display = 'none'; tip.classList.remove('pinned'); }
+
+// Switch the Claude desktop app to this person's conversation. The server
+// works out the link; when it cannot, fall back to the app's own last
+// conversation so a click is never a dead click.
+const JUMP_FALLBACK = 'claude://code/continue?session=last&source=url_external';
+function jumpToDesktop(s) {
+  if (!state.jump) return;
+  const url = (s && s.deepLink) || JUMP_FALLBACK;
+  // Windows hands claude:// to the desktop app and the browser stays on this
+  // page, so the office survives the jump — in the pop-out window too.
+  try { location.href = url; } catch { /* a browser that refuses the protocol just does nothing */ }
+}
 const officeOpts = {
   compact: PIP,
   onFrame: (renderer) => popout?.drawPreview(renderer),
   label: (s) => (s.agent === 'omp' && s.subagent && s.title) || s.project || AGENT_NAME[s.agent] || s.agent,
   onHover(s, at, click) {
+    // Clicking someone switches the Claude desktop app to their conversation.
+    if (click && s) jumpToDesktop(s);
     // In full screen a click opens the agent in the side panel instead of pinning a card.
     if (click && state.full && s) { hideTip(); openDetail(s.key); return; }
     if (click) {
