@@ -281,6 +281,43 @@
     lift: '🏋️', treadmill: '🏃', wheel: '🌀', yoga: '🧘', box: '📦', sun: '☀️',
   };
 
+  // Five-pixel capitals, only the ones the walls use. A font run through
+  // the pixel buffer comes out as smears; these are placed dot by dot.
+  const PX_FONT = {
+    E: ['###', '#..', '##.', '#..', '###'], G: ['###', '#..', '#.#', '#.#', '###'], H: ['#.#', '#.#', '###', '#.#', '#.#'],
+    I: ['#', '#', '#', '#', '#'], M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'], N: ['#..#', '##.#', '#.##', '#..#', '#..#'],
+    P: ['###', '#.#', '###', '#..', '#..'], S: ['###', '#..', '###', '..#', '###'], T: ['###', '.#.', '.#.', '.#.', '.#.'],
+    '✓': ['....#', '...#.', '#.#..', '.#...', '.....'], ' ': ['..', '..', '..', '..', '..'],
+  };
+  const pxGlyph = (ch) => PX_FONT[ch] || PX_FONT[' '];
+  const pxTextWidth = (str) => [...str].reduce((w, ch) => w + pxGlyph(ch)[0].length + 1, -1);
+  // `slope` shears the line to lie along a wall: half a pixel down per
+  // pixel across on the back wall, half a pixel up on the left one.
+  function pxText(c, str, x0, y0, col, slope = 0) {
+    c.fillStyle = col;
+    let X = x0;
+    for (const ch of [...str]) {
+      const g = pxGlyph(ch);
+      for (let gx = 0; gx < g[0].length; gx++, X++) {
+        const dy = Math.round(X * slope);
+        for (let gy = 0; gy < 5; gy++) if (g[gy][gx] === '#') c.fillRect(X, y0 + gy + dy, 1, 1);
+      }
+      X++;
+    }
+  }
+  function pxLine(c, x0, y0, x1, y1, col) {
+    c.fillStyle = col;
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let e = dx - dy;
+    for (;;) {
+      c.fillRect(x0, y0, 1, 1);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * e;
+      if (e2 > -dy) { e -= dy; x0 += sx; }
+      if (e2 < dx) { e += dx; y0 += sy; }
+    }
+  }
+
   // A mug five pixels wide, standing on the origin.
   function pxMug(c, col, drink = '#6b3f22') {
     c.fillStyle = INK_HEX; c.fillRect(-2, -5, 5, 6); c.fillRect(3, -4, 2, 3);
@@ -1514,11 +1551,91 @@
       this.poly([P(0, 0, 0), P(0, D, 0), P(0, D, 0.12), P(0, 0, 0.12)], pal.trim);
       this.seg(P(0, 0, 0.12), P(W, 0, 0.12), this.tint(pal.trim, pal.dark ? 18 : 16));
       this.seg(P(0, 0, 0.12), P(0, D, 0.12), this.tint(pal.trim, pal.dark ? 18 : 16));
+      this.paintWalls();
     }
 
 
+    // What hangs on the walls and never changes, painted into the room
+    // layer with the walls themselves: whiteboard, sign, posters, the
+    // clock's face, the door.
+    paintWalls() {
+      const { OW } = this.plan;
+      const pal = this.pal;
+      const P = (x, y, z) => this.iso(x, y, z);
+      const B = (u, z) => P(u, 0, z); // along the back wall
+      const L = (v, z) => P(0, v, z); // along the left wall
+      const edge = this.tint(pal.trim, pal.dark ? -14 : -24);
+
+      // meeting room whiteboard: two headings, a flow, a chart, two notes
+      const wx = OW + 2.4;
+      const Wb = (u, z) => B(wx + u, z);
+      this.poly([Wb(0, 0.8), Wb(2.6, 0.8), Wb(2.6, 1.95), Wb(0, 1.95)], '#fdfdfb', edge);
+      this.seg(Wb(0.2, 1.8), Wb(0.9, 1.8), '#3b8ee0');
+      this.seg(Wb(0.2, 1.68), Wb(1.3, 1.68), '#3b8ee0');
+      this.seg(Wb(0.2, 1.56), Wb(0.7, 1.56), '#9cc4ee');
+      for (const [u, z] of [[1.6, 1.5], [2.1, 1.16]]) {
+        this.poly([Wb(u, z), Wb(u + 0.36, z), Wb(u + 0.36, z + 0.24), Wb(u, z + 0.24)], null, '#c96442');
+      }
+      this.seg(Wb(1.96, 1.56), Wb(2.1, 1.34), '#c96442');
+      const pts = [[0.2, 1.0], [0.45, 1.16], [0.7, 1.06], [0.95, 1.3], [1.2, 1.22], [1.45, 1.42]];
+      for (let i = 1; i < pts.length; i++) this.seg(Wb(pts[i - 1][0], pts[i - 1][1]), Wb(pts[i][0], pts[i][1]), '#5f9a4c');
+      this.seg(Wb(0.2, 0.92), Wb(1.5, 0.92), '#b9bcc4');
+      this.art(Wb(2.2, 1.8), (c) => {
+        c.fillStyle = '#ffe066'; c.fillRect(0, 0, 2, 2);
+        c.fillStyle = '#ff9ec0'; c.fillRect(3, 2, 2, 2);
+      });
+      this.box(wx + 0.4, 0, 0.74, 1.8, 0.07, 0.04, this.tint(pal.trim, 12), pal.trim, edge);
+      this.art(P(wx + 0.7, 0.05, 0.78), (c) => {
+        c.fillStyle = '#de4b40'; c.fillRect(0, -1, 2, 1);
+        c.fillStyle = '#3b8ee0'; c.fillRect(4, 1, 2, 1);
+        c.fillStyle = '#5f9a4c'; c.fillRect(8, 3, 2, 1);
+      });
+
+      // the sign over the meeting room
+      const sx = OW + 0.3;
+      this.poly([B(sx, 1.94), B(sx + 2.0, 1.94), B(sx + 2.0, 2.36), B(sx, 2.36)], this.shade(pal.trim, pal.dark ? 30 : -70), edge);
+      this.art(B(sx + 0.12, 2.3), (c) => pxText(c, 'MEETING', 0, 0, pal.dark ? '#1c1c1a' : '#f4efe6', 0.5));
+
+      // posters on the left wall, each in a paper border
+      for (const ps of this.plan.posters) {
+        const v0 = ps.y, v1 = ps.y + 1.4;
+        this.poly([L(v0, 0.92), L(v1, 0.92), L(v1, 1.98), L(v0, 1.98)], '#f6f1e6', edge);
+        this.poly([L(v0 + 0.06, 0.98), L(v1 - 0.06, 0.98), L(v1 - 0.06, 1.92), L(v0 + 0.06, 1.92)], ps.color);
+        ps.text.split(' ').forEach((line, i) => {
+          const pad = Math.max(0, Math.round((20 - pxTextWidth(line)) / 2));
+          this.art(L(v1 - 0.06, 1.74 - i * 0.44), (c) => pxText(c, line, pad, 0, '#ffffff', -0.5));
+        });
+      }
+
+      // the clock's face; the hands are drawn each frame
+      this.art(L(1.0, 1.85), (c) => {
+        pxDisc(c, 0, 0, 6, 6, edge);
+        pxDisc(c, 0, 0, 5, 5, pal.bubble);
+        c.fillStyle = this.tint(pal.bubble, -70);
+        c.fillRect(0, -5, 1, 1); c.fillRect(0, 5, 1, 1); c.fillRect(-5, 0, 1, 1); c.fillRect(5, 0, 1, 1);
+      });
+
+      // the door: two panels, a brass knob, and a flap for the staff
+      const dy = this.plan.door.y;
+      const leaf = this.shade(pal.deskL, -10);
+      const groove = this.tint(leaf, -26), lip = this.tint(leaf, 20);
+      this.poly([L(dy - 0.6, 0), L(dy + 0.6, 0), L(dy + 0.6, 1.8), L(dy - 0.6, 1.8)], pal.trim, edge);
+      this.poly([L(dy - 0.52, 0), L(dy + 0.52, 0), L(dy + 0.52, 1.72), L(dy - 0.52, 1.72)], leaf);
+      for (const [z0, z1] of [[1.0, 1.6], [0.52, 0.86]]) {
+        this.poly([L(dy - 0.38, z0), L(dy + 0.38, z0), L(dy + 0.38, z1), L(dy - 0.38, z1)], null, groove);
+        this.seg(L(dy - 0.38, z1), L(dy + 0.38, z1), lip, 0, 1);
+      }
+      this.poly([L(dy - 0.2, 0.04), L(dy + 0.2, 0.04), L(dy + 0.2, 0.42), L(dy - 0.2, 0.42)], '#2a2420', pal.trim);
+      this.seg(L(dy - 0.2, 0.42), L(dy + 0.2, 0.42), this.tint(pal.trim, 30));
+      this.art(L(dy - 0.44, 0.94), (c) => {
+        c.fillStyle = '#8a6a2a'; c.fillRect(0, 0, 2, 2);
+        c.fillStyle = '#e8cf8a'; c.fillRect(0, 0, 1, 1);
+      });
+      const mat = pal.dark ? '#5a3b2e' : '#b9654a';
+      this.poly([P(0.05, dy - 0.6), P(0.9, dy - 0.6), P(0.9, dy + 0.6), P(0.05, dy + 0.6)], mat, this.tint(mat, -30));
+    }
+
     drawRoom() {
-      const { W, D, OW, MR, PY, pp } = this.plan;
       const pal = this.pal;
       const P = (x, y, z) => this.iso(x, y, z);
       const t = this.t / 1000;
@@ -1533,60 +1650,42 @@
         c.drawImage(bg, this.bgAt.x, this.bgAt.y, bg.width * ART, bg.height * ART);
       }
 
-      // windows with the real sky outside
+      // Windows, with the real sky outside: a cloud drifting by day, a moon
+      // and two stars by night.
       const sky = skyColor();
+      const frame = this.tint(pal.trim, pal.dark ? -14 : -24);
       for (const x of this.plan.windows) {
-        this.poly([P(x, 0, 0.85), P(x + 1.5, 0, 0.85), P(x + 1.5, 0, 2.0), P(x, 0, 2.0)], sky.sky);
+        const Wn = (u, z) => P(x + u, 0, z);
+        this.poly([Wn(0, 0.85), Wn(1.5, 0.85), Wn(1.5, 2.0), Wn(0, 2.0)], sky.sky);
         if (sky.night) {
-          this.onWall('y0', x + 0.3, 1.75, (c) => { c.fillStyle = '#f4f1d0'; c.beginPath(); c.arc(0, 0, 3, 0, Math.PI * 2); c.fill(); });
-          this.onWall('y0', x + 1.1, 1.55, (c) => { c.fillStyle = 'rgba(255,255,255,.7)'; c.fillRect(0, 0, 1.5, 1.5); });
+          this.art(Wn(0.32, 1.78), (c) => { pxDisc(c, 0, 0, 2, 2, '#f4f1d0'); pxDisc(c, 1, -1, 1, 1, sky.sky); });
+          this.art(Wn(1.1, 1.74), (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, 1, 1); c.fillRect(-5, 3, 1, 1); });
         } else {
-          const cx = x + 0.25 + ((t * 0.02 + x * 0.37) % 1) * 1.0;
-          this.onWall('y0', cx, 1.65, (c) => {
-            c.fillStyle = 'rgba(255,255,255,.85)';
-            c.beginPath(); c.ellipse(0, 0, 7, 3, 0, 0, Math.PI * 2); c.ellipse(5, -2, 5, 3, 0, 0, Math.PI * 2); c.fill();
+          const cx = 0.38 + ((t * 0.02 + x * 0.37) % 1) * 0.74;
+          this.art(Wn(cx, 1.8), (c) => {
+            c.fillStyle = '#ffffff';
+            c.fillRect(-4, 0, 9, 2); c.fillRect(-2, -1, 4, 1); c.fillRect(1, -2, 3, 1);
+            c.fillStyle = 'rgba(190,210,235,.9)'; c.fillRect(-3, 2, 7, 1);
           });
         }
-        this.poly([P(x + 0.74, 0, 0.85), P(x + 0.76, 0, 0.85), P(x + 0.76, 0, 2.0), P(x + 0.74, 0, 2.0)], pal.trim);
-        this.poly([P(x, 0, 0.85), P(x + 1.5, 0, 0.85), P(x + 1.5, 0, 0.9), P(x, 0, 0.9)], pal.trim);
+        // a glint on the glass, then the frame: a rail, a post, a sill
+        this.seg(Wn(0.14, 1.04), Wn(0.3, 1.36), 'rgba(255,255,255,.4)');
+        this.seg(Wn(0.94, 0.98), Wn(1.06, 1.22), 'rgba(255,255,255,.3)');
+        this.poly([Wn(0.72, 0.85), Wn(0.78, 0.85), Wn(0.78, 2.0), Wn(0.72, 2.0)], pal.trim);
+        this.poly([Wn(0, 1.5), Wn(1.5, 1.5), Wn(1.5, 1.55), Wn(0, 1.55)], pal.trim);
+        this.poly([Wn(0, 0.85), Wn(1.5, 0.85), Wn(1.5, 2.0), Wn(0, 2.0)], null, frame);
+        this.box(x - 0.04, 0, 0.8, 1.58, 0.07, 0.05, this.tint(pal.trim, 14), pal.trim, frame);
         this.poly([P(x, 0.05), P(x + 1.5, 0.05), P(x + 1.95, 1.2), P(x + 0.45, 1.2)], sky.night ? 'rgba(120,140,200,.06)' : 'rgba(255,250,230,.16)');
       }
-      // meeting room whiteboard + sign
-      const wx = OW + 2.4;
-      this.poly([P(wx, 0, 0.8), P(wx + 2.6, 0, 0.8), P(wx + 2.6, 0, 1.95), P(wx, 0, 1.95)], '#fdfdfb', pal.trim);
-      this.onWall('y0', wx + 0.25, 1.75, (c) => {
-        c.lineWidth = 1.4;
-        c.strokeStyle = '#3b8ee0';
-        c.beginPath(); c.moveTo(0, 0); c.lineTo(22, 0); c.moveTo(0, 7); c.lineTo(36, 7); c.stroke();
-        c.strokeStyle = '#c96442';
-        c.strokeRect(46, -2, 20, 12); c.strokeRect(80, 6, 20, 12);
-        c.beginPath(); c.moveTo(66, 4); c.lineTo(80, 12); c.stroke();
-        c.strokeStyle = '#5f9a4c';
-        c.beginPath(); c.moveTo(0, 22); for (let i = 0; i < 8; i++) c.lineTo(i * 8, 22 - ((i * 37) % 13)); c.stroke();
-      });
-      this.onWall('y0', OW + 0.5, 2.2, (c) => {
-        c.font = '700 9px ui-sans-serif, system-ui, sans-serif'; c.fillStyle = this.shade(pal.trim, -60); c.fillText('MEETING', 0, 0);
-      });
-      // left wall: posters, clock, door
-      for (const ps of this.plan.posters) {
-        this.poly([P(0, ps.y, 0.95), P(0, ps.y + 0.9, 0.95), P(0, ps.y + 0.9, 1.95), P(0, ps.y, 1.95)], ps.color);
-        this.onWall('x0', ps.y + 0.45, 1.4, (c) => {
-          c.font = '800 8px ui-sans-serif, system-ui, sans-serif'; c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(ps.text, 0, 0);
-        });
-      }
-      this.onWall('x0', 1.0, 1.85, (c) => {
-        c.beginPath(); c.arc(0, 0, 11, 0, Math.PI * 2); c.fillStyle = pal.bubble; c.fill();
-        c.lineWidth = 2; c.strokeStyle = pal.trim; c.stroke();
+
+      // The clock keeps real time.
+      this.art(P(0, 1.0, 1.85), (c) => {
         const d = new Date();
-        const hand = (ang, len, w) => { c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.sin(ang) * len, -Math.cos(ang) * len); c.lineWidth = w; c.strokeStyle = pal.bubbleInk; c.stroke(); };
-        hand(((d.getHours() % 12) + d.getMinutes() / 60) / 12 * Math.PI * 2, 5.5, 2);
-        hand((d.getMinutes() / 60) * Math.PI * 2, 8, 1.4);
+        const hand = (ang, len) => pxLine(c, 0, 0, Math.round(Math.sin(ang) * len), Math.round(-Math.cos(ang) * len), pal.bubbleInk);
+        hand((d.getMinutes() / 60) * Math.PI * 2, 4);
+        hand(((d.getHours() % 12) + d.getMinutes() / 60) / 12 * Math.PI * 2, 2.6);
+        c.fillStyle = '#de4b40'; c.fillRect(0, 0, 1, 1);
       });
-      const dy = this.plan.door.y;
-      this.poly([P(0, dy - 0.6, 0), P(0, dy + 0.6, 0), P(0, dy + 0.6, 1.8), P(0, dy - 0.6, 1.8)], pal.trim);
-      this.poly([P(0, dy - 0.52, 0), P(0, dy + 0.52, 0), P(0, dy + 0.52, 1.72), P(0, dy - 0.52, 1.72)], this.shade(pal.deskL, -10));
-      this.onWall('x0', dy - 0.25, 0.85, (c) => { c.fillStyle = '#d8c48a'; c.beginPath(); c.arc(0, 0, 1.8, 0, Math.PI * 2); c.fill(); });
-      this.poly([P(0.05, dy - 0.6), P(0.9, dy - 0.6), P(0.9, dy + 0.6), P(0.05, dy + 0.6)], pal.dark ? '#5a3b2e' : '#b9654a');
     }
 
     // ------------------------------------------------------------ furniture
@@ -2779,32 +2878,43 @@
       }
     }
 
+    // The office pet: a small ginger cat on all fours, in profile, so nobody
+    // takes it for one of the staff.
     drawCat() {
       const k = this.cat;
-      const c = this.ctx;
-      const p = this.iso(k.x, k.y, 0);
       const t = this.t / 1000;
       const walking = k.path.length > 0;
-      c.save();
-      c.translate(p.x, p.y);
-      c.scale(k.face, 1);
-      c.fillStyle = this.pal.shadow;
-      c.beginPath(); c.ellipse(0, 0, 8, 3, 0, 0, Math.PI * 2); c.fill();
-      const col = '#e09a4a';
-      c.fillStyle = col;
-      if (walking) {
-        const s = Math.sin(t * 14) * 1.5;
-        c.fillRect(-5, -4, 2, 4 + s); c.fillRect(3, -4, 2, 4 - s);
-      }
-      c.beginPath(); c.ellipse(0, walking ? -6 : -4, 7, walking ? 4 : 5, 0, 0, Math.PI * 2); c.fill();
-      c.beginPath(); c.arc(6, walking ? -10 : -9, 3.6, 0, Math.PI * 2); c.fill();
-      c.beginPath(); c.moveTo(4, -12); c.lineTo(5, -16); c.lineTo(7, -12.5); c.fill();
-      c.beginPath(); c.moveTo(7, -12.5); c.lineTo(9, -15.5); c.lineTo(9.5, -11); c.fill();
-      c.strokeStyle = col; c.lineWidth = 2; c.lineCap = 'round';
-      c.beginPath(); c.moveTo(-6, -6); c.quadraticCurveTo(-12, -8 + Math.sin(t * 3) * 3, -10, -14); c.stroke();
-      c.fillStyle = '#2a2018';
-      c.fillRect(7, -10.5, 1.2, walking ? 1.2 : 0.6);
-      c.restore();
+      const fur = '#e8913f', stripe = '#c9702a', pale = '#fbe6c8', pink = '#f29aa8';
+      this.art(this.iso(k.x, k.y, 0), (c) => {
+        pxDisc(c, 0, 0, 5, 1, this.pal.shadow);
+        c.scale(k.face, 1);
+        const sway = Math.sin(t * 3) > 0 ? 0 : 1;
+        const s = walking && Math.sin(t * 14) > 0 ? 1 : 0;
+        // each part is [x, y, w, h, colour]; the outline is every part grown by one
+        const parts = walking ? [
+          [-6, -9, 1, 3, fur], [-6 - sway, -10, 1, 1, fur],          // tail up
+          [-5, -7, 9, 4, fur],                                        // body
+          [-4 - s, -3, 2, 3, fur], [2 + s, -3, 2, 3, fur],            // legs
+          [3, -10, 5, 5, fur], [3, -11, 1, 1, fur], [7, -11, 1, 1, fur], // head, ears
+        ] : [
+          [-6, -1, 3, 1, fur], [-7, -2 - sway, 1, 1, fur],           // tail round the feet
+          [-3, -7, 6, 7, fur],                                        // body, sitting
+          [1, -12, 5, 5, fur], [1, -13, 1, 1, fur], [5, -13, 1, 1, fur],
+        ];
+        c.fillStyle = INK_HEX;
+        for (const [x, y, w, h] of parts) c.fillRect(x - 1, y - 1, w + 2, h + 2);
+        for (const [x, y, w, h, col] of parts) { c.fillStyle = col; c.fillRect(x, y, w, h); }
+        const dot = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+        if (walking) {
+          dot(-3, -7, 1, 2, stripe); dot(-1, -7, 1, 2, stripe); dot(1, -7, 1, 2, stripe);
+          dot(-4, -4, 7, 1, pale); dot(6, -7, 2, 1, pale);
+          dot(6, -9, 1, 1, INK_HEX); dot(7, -8, 1, 1, pink);
+        } else {
+          dot(-2, -7, 1, 2, stripe); dot(0, -7, 1, 1, stripe);
+          dot(0, -5, 3, 3, pale); dot(1, -1, 2, 1, pale); dot(4, -9, 2, 1, pale);
+          dot(4, -11, 1, 1, INK_HEX); dot(5, -10, 1, 1, pink);
+        }
+      });
     }
 
     pingPongBall() {
