@@ -25,151 +25,6 @@
     { id: 'ragdoll', fur: '#f0e7d9', dark: '#6b5a52', belly: '#fbf7ef', ear: '#6b5a52', eye: '#5b8fd0', whisk: 'rgba(40,30,20,.45)', mask: true },
   ];
 
-  // ---- Pixel sprites ----------------------------------------------------
-  // A cat is drawn one pixel at a time into a small offscreen canvas and then
-  // blitted with smoothing off, so the pixels stay hard at any zoom. Each look
-  // is built once and cached: 500 pixels per cat per frame per session would
-  // cost real time, and a cat only has a handful of looks.
-  const PIXEL = 2;        // css px per scene pixel
-  // Colours are snapped to a coarse ramp. A limited palette is half of what
-  // makes a scene read as pixel art; without it the same wall arrives in six
-  // nearly identical browns.
-  const QUANT = 12;
-  const quantCache = new Map();
-  function quant(col) {
-    if (typeof col !== 'string' || col.indexOf('gradient') > -1) return col;
-    let hit = quantCache.get(col);
-    if (hit) return hit;
-    let r, g, b, a = 1;
-    if (col[0] === '#') {
-      const h = col.length === 4
-        ? col[1] + col[1] + col[2] + col[2] + col[3] + col[3]
-        : col.slice(1, 7);
-      const n = parseInt(h, 16);
-      r = n >> 16; g = (n >> 8) & 255; b = n & 255;
-      if (col.length === 9) a = parseInt(col.slice(7, 9), 16) / 255;
-    } else {
-      const m = col.match(/-?[\d.]+/g);
-      if (!m || m.length < 3) return col;
-      r = +m[0]; g = +m[1]; b = +m[2];
-      if (m.length > 3) a = +m[3];
-    }
-    const q = (v) => Math.min(255, Math.round(v / QUANT) * QUANT);
-    hit = a < 1 ? `rgba(${q(r)},${q(g)},${q(b)},${a})` : `rgb(${q(r)},${q(g)},${q(b)})`;
-    quantCache.set(col, hit);
-    return hit;
-  }
-  const PXW = 21, PXH = 24;
-  const PX_T = 0, PX_INK = 1, PX_FUR = 2, PX_DARK = 3, PX_BELLY = 4, PX_PINK = 5, PX_EYE = 6, PX_HI = 7, PX_IRIS = 8;
-  const INK_HEX = '#241f1c';
-  const spriteCache = new Map();
-
-  const pxGrid = () => Array.from({ length: PXH }, () => new Uint8Array(PXW));
-  const pxPut = (g, x, y, v) => {
-    x = Math.round(x); y = Math.round(y);
-    if (x >= 0 && x < PXW && y >= 0 && y < PXH) g[y][x] = v;
-  };
-  // Tested per cell rather than stroked, so the edge is a hard pixel staircase
-  // instead of an anti-aliased smudge.
-  function pxEllipse(g, cx, cy, rx, ry, v) {
-    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
-      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-        const dx = (x - cx) / rx, dy = (y - cy) / ry;
-        if (dx * dx + dy * dy <= 1.02) pxPut(g, x, y, v);
-      }
-  }
-  function pxTri(g, ax, ay, bx, by, cx, cy, v) {
-    const s = (x1, y1, x2, y2, x3, y3) => (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3);
-    for (let y = Math.floor(Math.min(ay, by, cy)); y <= Math.ceil(Math.max(ay, by, cy)); y++)
-      for (let x = Math.floor(Math.min(ax, bx, cx)); x <= Math.ceil(Math.max(ax, bx, cx)); x++) {
-        const d1 = s(x, y, ax, ay, bx, by), d2 = s(x, y, bx, by, cx, cy), d3 = s(x, y, cx, cy, ax, ay);
-        if (!(((d1 < 0) || (d2 < 0) || (d3 < 0)) && ((d1 > 0) || (d2 > 0) || (d3 > 0)))) pxPut(g, x, y, v);
-      }
-  }
-  // Every empty cell touching the body becomes outline. One clean ring around
-  // the silhouette is what makes it read as pixel art rather than as blocks.
-  function pxOutline(g) {
-    const out = g.map((r) => Uint8Array.from(r));
-    for (let y = 0; y < PXH; y++) for (let x = 0; x < PXW; x++) {
-      if (g[y][x] !== PX_T) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx >= 0 && nx < PXW && ny >= 0 && ny < PXH && g[ny][nx] !== PX_T && g[ny][nx] !== PX_INK) { out[y][x] = PX_INK; break; }
-      }
-    }
-    return out;
-  }
-
-  function catGrid(br, seated, front, eyes) {
-    const g = pxGrid();
-    const hcx = 10, hcy = 8, hrx = 6.5, hry = 6.2;
-    const bcy = seated ? 17.6 : 17.0, brx = seated ? 6.4 : 5.4, bry = seated ? 5.4 : 6.0;
-    // Ears first, head over them: the ear roots vanish into the head, and the
-    // tips have to clear the head's ellipse or they end up as two bumps.
-    pxTri(g, hcx - 6.6, hcy - 2.2, hcx - 5.0, hcy - 11.6, hcx - 2.2, hcy - 3.6, PX_FUR);
-    pxTri(g, hcx + 6.6, hcy - 2.2, hcx + 5.0, hcy - 11.6, hcx + 2.2, hcy - 3.6, PX_FUR);
-    if (front) {
-      pxTri(g, hcx - 5.6, hcy - 3.4, hcx - 4.9, hcy - 9.4, hcx - 3.4, hcy - 4.2, PX_PINK);
-      pxTri(g, hcx + 5.6, hcy - 3.4, hcx + 4.9, hcy - 9.4, hcx + 3.4, hcy - 4.2, PX_PINK);
-    }
-    pxEllipse(g, hcx, bcy, brx, bry, PX_FUR);
-    pxEllipse(g, hcx, bcy + 1.2, brx - 2.6, bry - 1.8, PX_BELLY);
-    pxEllipse(g, hcx, hcy, hrx, hry, PX_FUR);
-    for (const sx of [-1, 1]) pxEllipse(g, hcx + sx * (seated ? 3.4 : 2.9), bcy + bry - 0.6, 1.9, 1.5, PX_BELLY);
-    if (br.stripes) for (const dx of [-3, 0, 3]) for (let k = 0; k < 2; k++) pxPut(g, hcx + dx, hcy - 4.6 + k, PX_DARK);
-    if (br.patches) { pxEllipse(g, hcx - 4, hcy - 3, 2.6, 2.2, PX_DARK); pxEllipse(g, hcx + 3, bcy - 2, 2.2, 2, PX_DARK); }
-    if (br.mask && front) pxEllipse(g, hcx, hcy + 1.6, 4.2, 3.6, PX_DARK);
-
-    if (front) {
-      const ey = Math.round(hcy - 0.4);
-      for (const sx of [-1, 1]) {
-        const ex = hcx + sx * 3;
-        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 1; dx++) {
-          if ((dx === -2 || dx === 1) && Math.abs(dy) === 2) continue;
-          if (eyes === 'shut' && dy !== 1) continue;
-          pxPut(g, ex + dx, ey + dy, PX_EYE);
-        }
-        if (eyes !== 'shut') {
-          // Iris 2x2 centred, highlight exactly one pixel: a second one reads
-          // as a tear running down the face.
-          pxPut(g, ex - 1, ey, PX_IRIS); pxPut(g, ex, ey, PX_IRIS);
-          pxPut(g, ex - 1, ey + 1, PX_IRIS); pxPut(g, ex, ey + 1, PX_IRIS);
-          pxPut(g, ex - 1, ey - 1, PX_HI);
-          if (eyes === 'wide') { pxPut(g, ex - 2, ey - 2, PX_EYE); pxPut(g, ex + 1, ey - 2, PX_EYE); }
-        }
-      }
-      const ny = ey + 3;
-      pxPut(g, hcx - 1, ny, PX_PINK); pxPut(g, hcx, ny, PX_PINK); pxPut(g, hcx + 1, ny, PX_PINK);
-      pxPut(g, hcx, ny + 1, PX_PINK);
-      pxPut(g, hcx - 2, ny + 2, PX_INK); pxPut(g, hcx - 1, ny + 2, PX_INK);
-      pxPut(g, hcx + 1, ny + 2, PX_INK); pxPut(g, hcx + 2, ny + 2, PX_INK);
-      // Blush in pink, never in the shade colour: dark cheeks read as dirt on
-      // a pale cat.
-      for (const sx of [-1, 1]) { pxPut(g, hcx + sx * 6, ny + 1, PX_PINK); pxPut(g, hcx + sx * 5, ny + 1, PX_PINK); }
-    }
-    return pxOutline(g);
-  }
-
-  function catSprite(br, seated, front, eyes) {
-    const key = `${br.id}|${seated ? 's' : 'u'}|${front ? 'f' : 'b'}|${eyes}`;
-    let cv = spriteCache.get(key);
-    if (cv) return cv;
-    cv = document.createElement('canvas');
-    cv.width = PXW; cv.height = PXH;
-    const c = cv.getContext('2d');
-    const g = catGrid(br, seated, front, eyes);
-    for (let y = 0; y < PXH; y++) for (let x = 0; x < PXW; x++) {
-      const v = g[y][x];
-      if (v === PX_T) continue;
-      c.fillStyle = v === PX_INK ? INK_HEX : v === PX_EYE ? '#21212b' : v === PX_HI ? '#ffffff'
-        : v === PX_FUR ? br.fur : v === PX_DARK ? br.dark : v === PX_BELLY ? br.belly
-        : v === PX_PINK ? br.ear : br.eye;
-      c.fillRect(x, y, 1, 1);
-    }
-    spriteCache.set(key, cv);
-    return cv;
-  }
-
   const SKIN = ['#f3cfb0', '#e5b38f', '#c98d66', '#9a6646', '#6e4630', '#f7dcc7'];
   const HAIR = ['#2a2019', '#4b3020', '#8a4b2a', '#c99a5b', '#1c1c1c', '#8c8c8c', '#a33a2c', '#3d3550'];
   const SHIRT = {
@@ -372,8 +227,7 @@
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'office-canvas';
       root.appendChild(this.canvas);
-      this.vctx = this.canvas.getContext('2d');
-      this.ctx = this.vctx;
+      this.ctx = this.canvas.getContext('2d');
       this.people = new Map();
       this.deskOf = new Map();
       this.offDuty = 0;
@@ -798,14 +652,6 @@
       this.canvas.style.width = this.cw + 'px';
       this.canvas.style.height = this.ch + 'px';
       this.dpr = dpr;
-      // The whole room is drawn into a buffer PIXEL css-pixels smaller and
-      // blown back up with smoothing off, so every edge in the scene lands
-      // on the same pixel grid as the cats. Camera and hit coordinates are
-      // untouched: only the device scale changes, from dpr to 1 / PIXEL.
-      if (!this.buf) this.buf = document.createElement('canvas');
-      this.buf.width = Math.max(1, Math.round(this.cw / PIXEL));
-      this.buf.height = Math.max(1, Math.round(this.ch / PIXEL));
-      this.ctx = this.buf.getContext('2d');
     }
 
     fitCamera() {
@@ -844,67 +690,13 @@
 
     // ------------------------------------------------------------ primitives
 
-    // Every shape in the room comes through here, so this is where the scene
-    // becomes pixel art. Canvas fill() anti-aliases diagonals, and an
-    // isometric room is nothing but diagonals, so the polygon is rasterised
-    // by hand instead: corners land on whole pixels, each row is filled as
-    // whole pixels, and edges are walked with Bresenham. Nothing is averaged,
-    // which is the difference between pixel art and a downscaled picture.
     poly(pts, fill, stroke) {
       const c = this.ctx;
-      const m = c.getTransform();
-      const dev = pts.map((p) => ({
-        x: Math.round(p.x * m.a + p.y * m.c + m.e),
-        y: Math.round(p.x * m.b + p.y * m.d + m.f),
-      }));
-      c.save();
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      if (fill) { c.fillStyle = quant(fill); this.scanFill(dev); }
-      if (stroke) { c.fillStyle = quant(stroke); this.edgeLine(dev); }
-      c.restore();
-    }
-
-    // Even-odd scanline fill, one whole pixel row at a time.
-    scanFill(pts) {
-      const c = this.ctx;
-      let lo = Infinity, hi = -Infinity;
-      for (const p of pts) { if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y; }
-      for (let y = lo; y <= hi; y++) {
-        const xs = [];
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-          const a = pts[j], b = pts[i];
-          if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
-            xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
-          }
-        }
-        if (!xs.length) continue;
-        xs.sort((p, q) => p - q);
-        for (let k = 0; k + 1 < xs.length; k += 2) {
-          // Rounded outward on purpose: neighbouring faces then overlap by a
-          // pixel instead of leaving a dark seam between them.
-          const x0 = Math.floor(xs[k]), x1 = Math.ceil(xs[k + 1]);
-          if (x1 > x0) c.fillRect(x0, y, x1 - x0, 1);
-        }
-      }
-    }
-
-    // One-pixel outline, walked rather than stroked so it stays hard.
-    edgeLine(pts) {
-      const c = this.ctx;
-      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-        let { x: x0, y: y0 } = pts[j];
-        const { x: x1, y: y1 } = pts[i];
-        const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-        const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-        let err = dx + dy;
-        for (let guard = 0; guard < 4000; guard++) {
-          c.fillRect(x0, y0, 1, 1);
-          if (x0 === x1 && y0 === y1) break;
-          const e2 = 2 * err;
-          if (e2 >= dy) { err += dy; x0 += sx; }
-          if (e2 <= dx) { err += dx; y0 += sy; }
-        }
-      }
+      c.beginPath();
+      pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+      c.closePath();
+      if (fill) { c.fillStyle = fill; c.fill(); }
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
     }
 
     box(x, y, z, w, d, h, top, left, right) {
@@ -1440,123 +1232,236 @@
       const br = p.breed || BREEDS[0];
       const fur = br.fur;
       const furDark = br.dark;
-      const INK = INK_HEX;
-      const pxFloor = (v) => Math.round(v);
-      // A limb is a flat block inside a one-pixel outline, snapped to whole
-      // pixels so it lines up with the sprite's own grid.
+      const INK = '#241f1c';
+
+      // Sticker look: flat colour inside a dark outline. The outline is what
+      // keeps a cat this small readable against the office floor.
+      const pen = (w) => { c.strokeStyle = INK; c.lineWidth = w; c.lineJoin = 'round'; c.lineCap = 'round'; };
+      const rrPath = (rx, ry, rw, rh, r) => {
+        const top = rh < 0 ? ry + rh : ry;
+        const h = Math.abs(rh);
+        const rad = Math.min(r, Math.abs(rw) / 2, h / 2);
+        c.beginPath();
+        c.moveTo(rx + rad, top);
+        c.arcTo(rx + rw, top, rx + rw, top + h, rad);
+        c.arcTo(rx + rw, top + h, rx, top + h, rad);
+        c.arcTo(rx, top + h, rx, top, rad);
+        c.arcTo(rx, top, rx + rw, top, rad);
+        c.closePath();
+      };
+      // One outlined limb. The activity poses below place these exactly where
+      // the arms and legs used to go, so every pose keeps animating.
       const limb = (lx, ly, lw, lh, fill) => {
-        const x0 = pxFloor(lx), w = pxFloor(Math.abs(lw));
-        const h = pxFloor(Math.abs(lh)), y0 = pxFloor(Math.min(ly, ly + lh));
-        c.fillStyle = INK; c.fillRect(x0 - 1, y0 - 1, w + 2, h + 2);
-        c.fillStyle = fill || fur; c.fillRect(x0, y0, w, h);
+        rrPath(lx, ly, lw, lh, 1.5);
+        c.fillStyle = fill || fur; c.fill(); pen(1.5); c.stroke();
       };
 
-      // Tail: a few blocks along a curve, so it can still swing. Drawn before
-      // the body so it sits behind it.
+      // Tail, behind everything: stroked twice, ink then fur, for the outline.
       {
-        const sway = Math.sin(t * (moving ? 6 : 1.6) + p.phase) * (moving ? 2 : 1);
-        const root = seated ? -4 : -8;
-        for (let i = 0; i < 5; i++) {
-          const k = i / 4;
-          const tx = pxFloor(5 + k * 6 + sway * k);
-          const ty = pxFloor(root - k * 10);
-          c.fillStyle = INK; c.fillRect(tx - 1, ty - 1, 4, 4);
-          c.fillStyle = i > 2 ? br.belly : fur; c.fillRect(tx, ty, 2, 2);
-        }
+        const sway = Math.sin(t * (moving ? 6 : 1.6) + p.phase) * (moving ? 3.2 : 1.4);
+        const root = seated ? -3 : -8;
+        const tail = () => {
+          c.beginPath();
+          c.moveTo(4.5, root);
+          c.quadraticCurveTo(12 + sway, root - 2, 12.5 + sway, root - 11);
+        };
+        pen(5.4); tail(); c.stroke();
+        c.strokeStyle = fur; c.lineWidth = 2.8; tail(); c.stroke();
       }
 
+      if (seated) {
+        limb(-5, -4, 4, 5);
+        limb(1, -4, 4, 5);
+      } else {
+        limb(-5, -10, 4, 10 + step * 2);
+        limb(1, -10, 4, 10 - step * 2);
+      }
       const hip = seated ? -4 : -10;
-      const sleepy = s.status === 'idle';
-      const napping = st.act === 'nap';
-      const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
-      const eyes = (blink || sleepy || napping) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
-      // From here on one unit is one scene pixel. Without this the camera
-      // squeezes the 21x24 sprite into about 5x6 buffer pixels and the face
-      // is destroyed: eyes, ears and nose all land on the same cell.
-      const S = PIXEL / Math.max(0.0001, this.cam.zoom);
-      c.scale(S, S);
-      const sprite = catSprite(br, seated, front, eyes);
-      const smooth = c.imageSmoothingEnabled;
-      c.imageSmoothingEnabled = false;
-      c.drawImage(sprite, -10, -PXH);
-      c.imageSmoothingEnabled = smooth;
-
-      // The sprite already has the cat's own front paws, so an activity only
-      // adds what it needs: a small paw block and the thing being held. Full
-      // arms grafted onto a pixel cat read as two black wings.
-      const paw = (px2, py2) => {
-        c.fillStyle = INK; c.fillRect(pxFloor(px2) - 1, pxFloor(py2) - 1, 4, 4);
-        c.fillStyle = br.belly; c.fillRect(pxFloor(px2), pxFloor(py2), 2, 2);
+      rrPath(-7, hip - 13, 14, 14, 5);
+      c.fillStyle = fur; c.fill(); pen(1.8); c.stroke();
+      const bodyClip = (fn) => {
+        c.save(); rrPath(-7, hip - 13, 14, 14, 5); c.clip(); fn(); c.restore();
       };
-      const prop = (px2, py2, w, h, fill) => {
-        c.fillStyle = INK; c.fillRect(pxFloor(px2) - 1, pxFloor(py2) - 1, w + 2, h + 2);
-        c.fillStyle = fill; c.fillRect(pxFloor(px2), pxFloor(py2), w, h);
+      bodyClip(() => {
+        c.fillStyle = br.belly;
+        c.beginPath(); c.ellipse(0, hip - 5.2, 3.7, 4.5, 0, 0, Math.PI * 2); c.fill();
+        if (br.stripes) {
+          c.fillStyle = furDark;
+          c.fillRect(-7, hip - 11.2, 2.8, 1.5);
+          c.fillRect(4.2, hip - 11.2, 2.8, 1.5);
+          c.fillRect(-7, hip - 7.4, 2.8, 1.5);
+          c.fillRect(4.2, hip - 7.4, 2.8, 1.5);
+        }
+        if (br.patches) {
+          c.fillStyle = '#e8913f'; c.fillRect(-7, hip - 13, 4.6, 5.4);
+          c.fillStyle = '#30303a'; c.fillRect(3.6, hip - 6.4, 3.4, 6.4);
+        }
+      });
+      const arm = this.shade(fur, -12);
+      const hand = (hx, hy) => {
+        c.beginPath(); c.arc(hx, hy, 2.4, 0, Math.PI * 2);
+        c.fillStyle = br.belly; c.fill(); pen(1.4); c.stroke();
       };
       const sip = Math.sin(t * 0.9 + p.phase) > 0.6;
-      const top = -PXH + (seated ? 13 : 12);
       switch (st.act) {
         case 'wave': {
-          const wave = Math.sin(t * 8 + p.phase) > 0 ? 0 : 2;
-          paw(8, top - 4 - wave);
+          const wave = Math.sin(t * 8 + p.phase) * 2;
+          limb(6, hip - 26, 3, 14, arm);
+          hand(7.5 + wave * 0.5, hip - 27);
+          limb(-9, hip - 11, 3, 10, arm);
           break;
         }
         case 'type': {
           const k1 = Math.sin(t * 18 + p.phase) > 0 ? 1 : 0;
-          paw(-9, top + 3 + k1);
-          paw(7, top + 4 - k1);
+          limb(-9, hip - 11 - k1, 3, 8, arm);
+          limb(6, hip - 11 - (1 - k1), 3, 8, arm);
           break;
         }
         case 'coffee':
         case 'water': {
-          const cupY = sip && front ? top - 3 : top + 2;
-          paw(8, cupY + 2);
-          prop(7, cupY, 4, 5, st.act === 'water' ? '#aad7ff' : '#fafafa');
-          if (st.act === 'coffee') { c.fillStyle = '#6b3f22'; c.fillRect(8, cupY + 1, 2, 1); }
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, sip ? hip - 15 : hip - 11, 3, sip ? 7 : 10, arm);
+          const cupY = sip && front ? hip - 19 : hip - 4;
+          limb(6, cupY, 5, 6, st.act === 'water' ? 'rgba(170,215,255,.95)' : '#fafafa');
+          if (st.act === 'coffee') { c.fillStyle = '#6b3f22'; c.fillRect(7, cupY + 1, 3, 1.5); }
           break;
         }
         case 'read': {
+          limb(-8, hip - 11, 3, 7, arm);
+          limb(5, hip - 11, 3, 7, arm);
           if (front) {
-            prop(-6, top + 1, 12, 7, pick(this.pal.book, p.h, 5));
-            c.fillStyle = '#fff'; c.fillRect(-1, top + 2, 1, 5);
+            limb(-7, hip - 12, 14, 9, pick(this.pal.book, p.h, 5));
+            c.fillStyle = '#fff'; c.fillRect(-0.5, hip - 11.2, 1, 7.4);
           }
-          paw(-8, top + 4); paw(6, top + 4);
           break;
         }
         case 'whiteboard':
         case 'arcade': {
-          const k = Math.sin(t * (st.act === 'arcade' ? 14 : 3) + p.phase) > 0 ? 0 : 2;
-          paw(8, top - 6 + k);
+          const k = Math.sin(t * (st.act === 'arcade' ? 14 : 3) + p.phase);
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, hip - 20 + k * 2, 3, 12, arm);
+          hand(7.5, hip - 21 + k * 2);
           break;
         }
         case 'pingpong': {
-          paw(8, top);
-          prop(10, top - 4, 4, 4, '#c0392b');
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, hip - 14, 3, 9, arm);
+          c.beginPath(); c.arc(10, hip - 16, 4, 0, Math.PI * 2);
+          c.fillStyle = '#c0392b'; c.fill(); pen(1.4); c.stroke();
           break;
         }
         case 'foosball': {
-          const k1 = Math.sin(t * 16 + p.phase) > 0 ? 0 : 1;
-          paw(-9, top + k1); paw(7, top + 1 - k1);
+          const k1 = Math.sin(t * 16 + p.phase) * 1.5;
+          limb(-9, hip - 12 + k1, 3, 7, arm);
+          limb(6, hip - 12 - k1, 3, 7, arm);
           break;
         }
         case 'phone': {
-          paw(7, top - 2);
-          prop(7, top - 6, 3, 6, '#2a2a30');
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(5, hip - 22, 3, 12, arm);
+          limb(5, hip - 25, 3, 6, '#222');
           break;
         }
-        default: break;
+        case 'nap': {
+          limb(-9, hip - 13, 3, 6, arm);
+          limb(6, hip - 13, 3, 6, arm);
+          break;
+        }
+        default: {
+          const sw = moving ? step * 2 : 0;
+          limb(-9, hip - 11 + sw, 3, 10, arm);
+          limb(6, hip - 11 - sw, 3, 10, arm);
+        }
       }
 
-      // Where the head sits inside the sprite, for the bubble and headphones.
-      const hy = -PXH + 8 + (st.act === 'think' ? Math.sin(t * 1.5 + p.phase) * 0.6 : 0);
+      const napping = st.act === 'nap';
+      const hy = hip - 20 + (napping ? 7 : 0) + (st.act === 'think' ? Math.sin(t * 1.5 + p.phase) * 0.6 : 0);
+      // Ears go in before the head so their bases disappear under it. They fold
+      // back when the cat is asleep.
+      const earY = hy - 6.4;
+      const drop = napping ? 2.8 : 0;
+      const ears = () => {
+        c.beginPath();
+        c.moveTo(-8.4, earY + 3.6); c.lineTo(-5.3, earY - 4.2 + drop); c.lineTo(-1.6, earY + 2.4); c.closePath();
+        c.moveTo(8.4, earY + 3.6); c.lineTo(5.3, earY - 4.2 + drop); c.lineTo(1.6, earY + 2.4); c.closePath();
+      };
+      c.fillStyle = br.mask ? br.dark : fur;
+      ears(); c.fill(); pen(1.7); c.stroke();
+      if (front) {
+        c.fillStyle = br.ear;
+        c.beginPath();
+        c.moveTo(-7.1, earY + 2.6); c.lineTo(-5.3, earY - 1.6 + drop); c.lineTo(-3.2, earY + 2); c.closePath();
+        c.moveTo(7.1, earY + 2.6); c.lineTo(5.3, earY - 1.6 + drop); c.lineTo(3.2, earY + 2); c.closePath();
+        c.fill();
+      }
+
+      const headPath = () => { c.beginPath(); c.ellipse(0, hy, 9, 8.2, 0, 0, Math.PI * 2); };
+      headPath();
+      c.fillStyle = fur; c.fill(); pen(1.8); c.stroke();
+      const headClip = (fn) => { c.save(); headPath(); c.clip(); fn(); c.restore(); };
+
+      headClip(() => {
+        if (br.mask) {
+          c.fillStyle = br.dark;
+          c.beginPath(); c.ellipse(0, hy + 1.8, 5.4, 5, 0, 0, Math.PI * 2); c.fill();
+        }
+        if (br.stripes) {
+          c.fillStyle = furDark;
+          c.fillRect(-4.8, hy - 8.2, 1.6, 4.2);
+          c.fillRect(-0.8, hy - 8.2, 1.6, 4.8);
+          c.fillRect(3.2, hy - 8.2, 1.6, 4.2);
+        }
+        if (br.patches) {
+          // Kept high on the head: a patch over an eye reads as an eyepatch.
+          c.fillStyle = '#e8913f';
+          c.beginPath(); c.arc(-5.4, hy - 5, 3.6, 0, Math.PI * 2); c.fill();
+          c.fillStyle = '#30303a';
+          c.beginPath(); c.arc(5.4, hy - 5.4, 2.6, 0, Math.PI * 2); c.fill();
+        }
+      });
+
+      if (front) {
+        const sleepy = s.status === 'idle';
+        const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
+        const shut = blink || sleepy || napping;
+        if (shut) {
+          pen(1.3);
+          c.beginPath(); c.arc(-3.4, hy - 0.8, 1.9, 0.1 * Math.PI, 0.9 * Math.PI); c.stroke();
+          c.beginPath(); c.arc(3.4, hy - 0.8, 1.9, 0.1 * Math.PI, 0.9 * Math.PI); c.stroke();
+        } else {
+          // Big sticker eyes: a dark almond, the breed colour low in it, one
+          // bright highlight. They open wider when something has gone wrong.
+          const wide = s.status === 'error' ? 1.16 : 1;
+          c.fillStyle = INK;
+          c.beginPath(); c.ellipse(-3.4, hy - 0.2, 2.3 * wide, 2.8 * wide, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(3.4, hy - 0.2, 2.3 * wide, 2.8 * wide, 0, 0, Math.PI * 2); c.fill();
+          c.fillStyle = br.eye;
+          c.beginPath(); c.ellipse(-3.4, hy + 0.7, 1.1, 1.2, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(3.4, hy + 0.7, 1.1, 1.2, 0, 0, Math.PI * 2); c.fill();
+          c.fillStyle = '#fff';
+          c.beginPath(); c.arc(-4.2, hy - 1.5, 1, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.arc(2.6, hy - 1.5, 1, 0, Math.PI * 2); c.fill();
+        }
+
+        c.fillStyle = 'rgba(240,145,138,.42)';
+        c.beginPath(); c.ellipse(-6.3, hy + 2.9, 2, 1.3, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(6.3, hy + 2.9, 2, 1.3, 0, 0, Math.PI * 2); c.fill();
+
+        c.fillStyle = br.ear;
+        c.beginPath(); c.moveTo(-1.1, hy + 3.1); c.lineTo(1.1, hy + 3.1); c.lineTo(0, hy + 4.3); c.closePath(); c.fill();
+        c.strokeStyle = INK; c.lineWidth = 1; c.lineCap = 'round';
+        c.beginPath(); c.arc(-1.2, hy + 4.7, 1.3, 0, Math.PI * 0.86); c.stroke();
+        c.beginPath(); c.arc(1.2, hy + 4.7, 1.3, Math.PI * 0.14, Math.PI); c.stroke();
+        c.lineCap = 'butt';
+      }
       if (st.act === 'arcade' || st.act === 'beanbag') {
         c.strokeStyle = '#222'; c.lineWidth = 2;
         c.beginPath(); c.arc(0, hy, 8, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
       }
       c.restore();
 
-      const headTop = y + (hy - 3) * sc * (PIXEL / Math.max(0.0001, this.cam.zoom));
-      const half = 11 * sc * (PIXEL / Math.max(0.0001, this.cam.zoom));
-      this.hit.push({ key: p.key, x0: x - half, x1: x + half, y0: headTop - 10, y1: fb.y + 4 });
+      const headTop = y + (hy - 11) * sc;
+      this.hit.push({ key: p.key, x0: x - 13, x1: x + 13, y0: headTop - 22, y1: fb.y + 4 });
       return { x, y: headTop, act: st.act };
     }
 
@@ -1789,7 +1694,7 @@
 
     draw() {
       const c = this.ctx;
-      c.setTransform(1 / PIXEL, 0, 0, 1 / PIXEL, 0, 0);
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       c.clearRect(0, 0, this.cw, this.ch);
       this.fitCamera();
       c.translate(this.cam.ox, this.cam.oy);
@@ -1818,34 +1723,27 @@
         else it.draw();
       }
       this.pingPongBall();
-
-      // Blow the buffer back up with nearest-neighbour: this is the step that
-      // turns the whole scene into pixels, not just the cats.
-      const v = this.vctx;
-      v.setTransform(1, 0, 0, 1, 0, 0);
-      v.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      v.imageSmoothingEnabled = false;
-      v.drawImage(this.buf, 0, 0, this.canvas.width, this.canvas.height);
-
-      // Name tags and the off-duty line go on at full resolution, after the
-      // scale-up: run through the pixel buffer their text turns to mush.
-      const buffered = this.ctx;
-      this.ctx = v;
-      v.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      const toScreen = (at) => ({
-        ...at, x: at.x * this.cam.zoom + this.cam.ox, y: at.y * this.cam.zoom + this.cam.oy,
-      });
-      for (const [p, at] of heads) this.bubble(p, toScreen(at));
-      if (this.offDuty > 0) {
-        const d = toScreen(this.iso(0.2, this.plan.door.y + 0.9, 0));
-        v.font = '600 10px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
-        v.textAlign = 'center';
-        v.fillStyle = this.pal.text;
-        v.globalAlpha = 0.65;
-        v.fillText(`+${this.offDuty} ${this.offDutyLabel}`, d.x - 10, d.y + 14);
-        v.globalAlpha = 1;
+      if (this.compact) {
+        // Keep labels readable when the room is scaled down for PiP.
+        c.save();
+        c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        for (const [p, at] of heads) this.bubble(p, {
+          ...at, x: at.x * this.cam.zoom + this.cam.ox, y: at.y * this.cam.zoom + this.cam.oy,
+        });
+        c.restore();
+      } else {
+        for (const [p, at] of heads) this.bubble(p, at);
       }
-      this.ctx = buffered;
+
+      if (this.offDuty > 0) {
+        const d = this.iso(0.2, this.plan.door.y + 0.9, 0);
+        c.font = '600 10px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
+        c.textAlign = 'center';
+        c.fillStyle = this.pal.text;
+        c.globalAlpha = 0.65;
+        c.fillText(`+${this.offDuty} ${this.offDutyLabel}`, d.x - 10, d.y + 14);
+        c.globalAlpha = 1;
+      }
 
       const z = this.cam.zoom;
       this.hit = this.hit.map((h) => ({
