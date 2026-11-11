@@ -822,7 +822,7 @@
       poi(bx2 + 0.4, by2 + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
 
       const posters = [
-        { y: 2.2, w: 3.8, color: '#c96442', text: 'WANIN' },
+        { y: 2.2, w: 3.8, color: '#f2c230', ink: '#3b2a12', text: 'WANIN' },
       ];
       return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, gym, mats, wait, door: { x: 0.4, y: D - 1.2 } };
     }
@@ -1616,12 +1616,12 @@
         const v0 = ps.y, v1 = ps.y + ps.w, z0 = 1.02, z1 = 1.98, GAP = 3, ROWS = 9;
         this.poly([L(v0, z0), L(v1, z0), L(v1, z1), L(v0, z1)], '#f6f1e6', edge);
         this.poly([L(v0 + 0.06, z0 + 0.06), L(v1 - 0.06, z0 + 0.06), L(v1 - 0.06, z1 - 0.06), L(v0 + 0.06, z1 - 0.06)], ps.color);
-        const rule = this.tint(ps.color, 26);
+        const rule = this.tint(ps.color, ps.ink ? -34 : 26);
         this.seg(L(v0 + 0.16, z1 - 0.1), L(v1 - 0.16, z1 - 0.1), rule);
         this.seg(L(v0 + 0.16, z0 + 0.1), L(v1 - 0.16, z0 + 0.1), rule);
         const inner = Math.round((ps.w - 0.12) * (TW / 2 / ART));
         const pad = Math.max(0, Math.round((inner - pxTextWidth(ps.text, PX_BIG, GAP)) / 2));
-        this.art(L(v1 - 0.06, (z0 + z1) / 2 + ROWS / 2 / (TH / ART)), (c) => pxText(c, ps.text, pad, 0, '#ffffff', -0.5, 1, PX_BIG, GAP));
+        this.art(L(v1 - 0.06, (z0 + z1) / 2 + ROWS / 2 / (TH / ART)), (c) => pxText(c, ps.text, pad, 0, ps.ink || '#ffffff', -0.5, 1, PX_BIG, GAP));
         for (const v of [v0 + 0.1, v1 - 0.1]) {
           this.art(L(v, z1 - 0.02), (c) => { c.fillStyle = '#8a6a2a'; c.fillRect(0, 0, 2, 2); c.fillStyle = '#e8cf8a'; c.fillRect(0, 0, 1, 1); });
         }
