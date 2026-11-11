@@ -31,6 +31,34 @@
   // is built once and cached: 500 pixels per cat per frame per session would
   // cost real time, and a cat only has a handful of looks.
   const PIXEL = 2;        // css px per scene pixel
+  // Colours are snapped to a coarse ramp. A limited palette is half of what
+  // makes a scene read as pixel art; without it the same wall arrives in six
+  // nearly identical browns.
+  const QUANT = 12;
+  const quantCache = new Map();
+  function quant(col) {
+    if (typeof col !== 'string' || col.indexOf('gradient') > -1) return col;
+    let hit = quantCache.get(col);
+    if (hit) return hit;
+    let r, g, b, a = 1;
+    if (col[0] === '#') {
+      const h = col.length === 4
+        ? col[1] + col[1] + col[2] + col[2] + col[3] + col[3]
+        : col.slice(1, 7);
+      const n = parseInt(h, 16);
+      r = n >> 16; g = (n >> 8) & 255; b = n & 255;
+      if (col.length === 9) a = parseInt(col.slice(7, 9), 16) / 255;
+    } else {
+      const m = col.match(/-?[\d.]+/g);
+      if (!m || m.length < 3) return col;
+      r = +m[0]; g = +m[1]; b = +m[2];
+      if (m.length > 3) a = +m[3];
+    }
+    const q = (v) => Math.min(255, Math.round(v / QUANT) * QUANT);
+    hit = a < 1 ? `rgba(${q(r)},${q(g)},${q(b)},${a})` : `rgb(${q(r)},${q(g)},${q(b)})`;
+    quantCache.set(col, hit);
+    return hit;
+  }
   const PXW = 21, PXH = 24;
   const PX_T = 0, PX_INK = 1, PX_FUR = 2, PX_DARK = 3, PX_BELLY = 4, PX_PINK = 5, PX_EYE = 6, PX_HI = 7, PX_IRIS = 8;
   const INK_HEX = '#241f1c';
@@ -816,13 +844,67 @@
 
     // ------------------------------------------------------------ primitives
 
+    // Every shape in the room comes through here, so this is where the scene
+    // becomes pixel art. Canvas fill() anti-aliases diagonals, and an
+    // isometric room is nothing but diagonals, so the polygon is rasterised
+    // by hand instead: corners land on whole pixels, each row is filled as
+    // whole pixels, and edges are walked with Bresenham. Nothing is averaged,
+    // which is the difference between pixel art and a downscaled picture.
     poly(pts, fill, stroke) {
       const c = this.ctx;
-      c.beginPath();
-      pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
-      c.closePath();
-      if (fill) { c.fillStyle = fill; c.fill(); }
-      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
+      const m = c.getTransform();
+      const dev = pts.map((p) => ({
+        x: Math.round(p.x * m.a + p.y * m.c + m.e),
+        y: Math.round(p.x * m.b + p.y * m.d + m.f),
+      }));
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      if (fill) { c.fillStyle = quant(fill); this.scanFill(dev); }
+      if (stroke) { c.fillStyle = quant(stroke); this.edgeLine(dev); }
+      c.restore();
+    }
+
+    // Even-odd scanline fill, one whole pixel row at a time.
+    scanFill(pts) {
+      const c = this.ctx;
+      let lo = Infinity, hi = -Infinity;
+      for (const p of pts) { if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y; }
+      for (let y = lo; y <= hi; y++) {
+        const xs = [];
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const a = pts[j], b = pts[i];
+          if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+            xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+          }
+        }
+        if (!xs.length) continue;
+        xs.sort((p, q) => p - q);
+        for (let k = 0; k + 1 < xs.length; k += 2) {
+          // Rounded outward on purpose: neighbouring faces then overlap by a
+          // pixel instead of leaving a dark seam between them.
+          const x0 = Math.floor(xs[k]), x1 = Math.ceil(xs[k + 1]);
+          if (x1 > x0) c.fillRect(x0, y, x1 - x0, 1);
+        }
+      }
+    }
+
+    // One-pixel outline, walked rather than stroked so it stays hard.
+    edgeLine(pts) {
+      const c = this.ctx;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        let { x: x0, y: y0 } = pts[j];
+        const { x: x1, y: y1 } = pts[i];
+        const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+        const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        let err = dx + dy;
+        for (let guard = 0; guard < 4000; guard++) {
+          c.fillRect(x0, y0, 1, 1);
+          if (x0 === x1 && y0 === y1) break;
+          const e2 = 2 * err;
+          if (e2 >= dy) { err += dy; x0 += sx; }
+          if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+      }
     }
 
     box(x, y, z, w, d, h, top, left, right) {
