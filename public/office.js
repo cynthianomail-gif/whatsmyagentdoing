@@ -871,8 +871,8 @@
       }));
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0);
-      if (fill) { c.fillStyle = quant(fill); this.scanFill(dev); }
-      if (stroke) { c.fillStyle = quant(stroke); this.edgeLine(dev); }
+      if (fill) { c.fillStyle = fill; this.scanFill(dev); }
+      if (stroke) { c.fillStyle = stroke; this.edgeLine(dev); }
       c.restore();
     }
 
@@ -924,6 +924,20 @@
       this.poly([P(x, y + d, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x, y + d, z + h)], left);
       this.poly([P(x + w, y, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x + w, y, z + h)], right);
       this.poly([P(x, y, z + h), P(x + w, y, z + h), P(x + w, y + d, z + h), P(x, y + d, z + h)], top);
+      // Flat faces alone read as paper cut-outs. A lit line where the top
+      // meets the two faces we can see, and a darker one where they meet
+      // the floor, is the bevel that makes a block look like furniture.
+      // Slivers are skipped: on a 2-pixel shelf the lines are all there is.
+      if (h >= 0.1 && w + d >= 0.5) {
+        const hiL = this.tint(left, 20), hiR = this.tint(right, 24);
+        if (hiL !== left) this.seg(P(x, y + d, z + h), P(x + w, y + d, z + h), hiL);
+        if (hiR !== right) this.seg(P(x + w, y, z + h), P(x + w, y + d, z + h), hiR);
+        if (h >= 0.22) {
+          const loL = this.tint(left, -24), loR = this.tint(right, -24);
+          if (loL !== left) this.seg(P(x, y + d, z), P(x + w, y + d, z), loL);
+          if (loR !== right) this.seg(P(x + w, y, z), P(x + w, y + d, z), loR);
+        }
+      }
     }
 
     shade(color, amt) {
@@ -960,45 +974,225 @@
 
     // ------------------------------------------------------------ room shell
 
+    // -------------------------------------------------------- static room layer
+
+    roomLayer() {
+      const { W, D, OW, MR, PY } = this.plan;
+      const key = [W, D, OW, MR, PY, this.pal.wood1, this.pal.wallL].join('|');
+      if (this.bg && this.bgKey === key) return this.bg;
+      const left = this.iso(0, D, 0).x - 8, right = this.iso(W, 0, 0).x + 8;
+      const top = this.iso(0, 0, WALL_H).y - 12, bottom = this.iso(W, D, 0).y + 8;
+      const ox = Math.floor(left / ART), oy = Math.floor(top / ART);
+      const cv = this.bg || (this.bg = document.createElement('canvas'));
+      cv.width = Math.ceil(right / ART) - ox;
+      cv.height = Math.ceil(bottom / ART) - oy;
+      const keep = this.ctx;
+      const g = cv.getContext('2d');
+      g.setTransform(1 / ART, 0, 0, 1 / ART, -ox, -oy);
+      this.ctx = g;
+      try { this.paintRoom(); } finally { this.ctx = keep; }
+      this.bgAt = { x: ox * ART, y: oy * ART };
+      this.bgKey = key;
+      return cv;
+    }
+
+    // Lighten or darken any colour the palette can hand over, hex or rgb().
+    tint(col, amt) {
+      if (typeof col !== 'string') return col;
+      // Asked for the same few colours on every box of every frame.
+      const memo = this.tints || (this.tints = new Map());
+      const key = col + '|' + amt;
+      const hit = memo.get(key);
+      if (hit !== undefined) return hit;
+      const out = this.tintRaw(col, amt);
+      memo.set(key, out);
+      return out;
+    }
+
+    tintRaw(col, amt) {
+      let r, g, b;
+      if (col[0] === '#') {
+        const n = parseInt(col.length === 4 ? col[1] + col[1] + col[2] + col[2] + col[3] + col[3] : col.slice(1, 7), 16);
+        r = n >> 16; g = (n >> 8) & 255; b = n & 255;
+      } else {
+        const m = col.match(/[\d.]+/g);
+        if (!m || m.length < 3 || m.length > 3) return col;
+        r = +m[0]; g = +m[1]; b = +m[2];
+      }
+      const f = (v) => clamp(Math.round(v + amt), 0, 255);
+      return `rgb(${f(r)},${f(g)},${f(b)})`;
+    }
+
+    // One hard line between two projected points, optionally nudged by whole
+    // pixels. Along a floor axis this is the clean 2:1 isometric staircase.
+    seg(a, b, col, dx = 0, dy = 0) {
+      const c = this.ctx;
+      const m = c.getTransform();
+      const q = (p) => ({ x: Math.round(p.x * m.a + m.e) + dx, y: Math.round(p.y * m.d + m.f) + dy });
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = col;
+      this.edgeLine([q(a), q(b)]);
+      c.restore();
+    }
+
+    paintRoom() {
+      const { W, D, OW, MR, PY, pp } = this.plan;
+      const pal = this.pal;
+      const c = this.ctx;
+      const m = c.getTransform();
+      const P = (x, y, z) => this.iso(x, y, z);
+      const dot = (p, col, dx = 0, dy = 0) => {
+        c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+        c.fillStyle = col;
+        c.fillRect(Math.round(p.x * m.a + m.e) + dx, Math.round(p.y * m.d + m.f) + dy, 1, 1);
+        c.restore();
+      };
+      const rng = (seed) => {
+        let v = seed % 2147483647; if (v <= 0) v += 2147483646;
+        return () => ((v = (v * 16807) % 2147483647) - 1) / 2147483646;
+      };
+      const STEP = ART / (TW / 2);     // one art pixel along a floor axis, in tiles
+
+      // Wood: boards of uneven length and tone, each with its own grain, laid
+      // in rows half a tile deep. The seed is the row, so the floor is the
+      // same floor every time it is repainted.
+      const planks = (x0, x1, y0, y1, salt) => {
+        const tones = [pal.wood1, pal.wood2, this.tint(pal.wood1, pal.dark ? 6 : -8)];
+        const seam = this.tint(pal.wood1, pal.dark ? -20 : -34);
+        let row = 0;
+        for (let y = y0; y < y1 - 1e-6; y += 0.5, row++) {
+          const r = rng(row * 131 + salt);
+          const yb = Math.min(y1, y + 0.5);
+          let x = x0 - r() * 1.5;
+          while (x < x1) {
+            const len = 1.2 + r() * 1.7;
+            const xa = Math.max(x0, x), xb = Math.min(x1, x + len);
+            const base = tones[Math.floor(r() * 3)];
+            const lt = this.tint(base, pal.dark ? 8 : 9), dk = this.tint(base, pal.dark ? -11 : -15);
+            const picks = [r(), r(), r(), r(), r(), r(), r()];
+            if (xb - xa > 0.05) {
+              this.poly([P(xa, y), P(xb, y), P(xb, yb), P(xa, yb)], base);
+              this.seg(P(xa, y), P(xb, y), lt, 0, 1);
+              for (let k = 0; k < 2; k++) {
+                let gy = y + 0.14 + picks[k] * 0.24;
+                const g0 = xa + 0.1 + picks[k + 2] * 0.3, g1 = Math.min(xb - 0.1, g0 + 0.4 + picks[k + 4] * (len - 0.7));
+                for (let gx = g0; gx < g1; gx += STEP) {
+                  const w = r();
+                  if (w < 0.1) gy += (w < 0.05 ? -1 : 1) * STEP;
+                  gy = Math.max(y + 0.1, Math.min(yb - 0.08, gy));
+                  if (w < 0.86) dot(P(gx, gy), dk);
+                }
+              }
+              if (picks[6] < 0.28 && xb - xa > 0.8) {
+                const k = P(xa + 0.3 + picks[0] * (xb - xa - 0.6), y + 0.25);
+                dot(k, seam); dot(k, seam, 1, 0); dot(k, dk, -1, 0); dot(k, dk, 2, 0); dot(k, dk, 0, -1); dot(k, dk, 1, 1);
+              }
+              this.seg(P(xb, y), P(xb, yb), seam);
+            }
+            x += len;
+          }
+          this.seg(P(x0, yb), P(x1, yb), seam);
+        }
+      };
+
+      planks(0, OW, 0, D, 17);
+
+      // Carpet: a flat colour reads as plastic, so it gets a weave of flecks.
+      this.poly([P(OW, 0), P(W, 0), P(W, MR), P(OW, MR)], pal.carpet);
+      {
+        const lt = this.tint(pal.carpet, 9), dk = this.tint(pal.carpet, -9);
+        let i = 0;
+        for (let y = STEP / 2; y < MR; y += STEP, i++) {
+          let j = 0;
+          for (let x = OW + STEP / 2; x < W; x += STEP, j++) {
+            const k = (i * 7 + j * 13) % 17;
+            if (k === 0) dot(P(x, y), lt); else if (k === 9) dot(P(x, y), dk);
+          }
+        }
+      }
+
+      // Pantry tiles, with grout and a lit edge on each.
+      for (let i = 0; i < Math.ceil((W - OW) * 2); i++) {
+        for (let j = 0; j < Math.ceil((PY - MR) * 2); j++) {
+          const x = OW + i / 2, y = MR + j / 2;
+          const x1 = Math.min(W, x + 0.5), y1 = Math.min(PY, y + 0.5);
+          const base = (i + j) % 2 ? pal.tileA : pal.tileB;
+          this.poly([P(x, y), P(x1, y), P(x1, y1), P(x, y1)], base);
+          this.seg(P(x, y), P(x1, y), this.tint(base, 10), 0, 1);
+          this.seg(P(x, y1), P(x1, y1), this.tint(pal.tileB, -16));
+          this.seg(P(x1, y), P(x1, y1), this.tint(pal.tileB, -16));
+        }
+      }
+
+      planks(OW, W, PY, D, 91);
+
+      // Lounge rug: a border, an inner line, and a row of stitches.
+      {
+        const x0 = OW + 0.3, x1 = OW + 4.3, y0 = PY + 0.6, y1 = D - 0.4;
+        this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], pal.rugEdge);
+        this.poly([P(x0 + 0.14, y0 + 0.14), P(x1 - 0.14, y0 + 0.14), P(x1 - 0.14, y1 - 0.14), P(x0 + 0.14, y1 - 0.14)], pal.rug);
+        this.poly([P(x0 + 0.3, y0 + 0.3), P(x1 - 0.3, y0 + 0.3), P(x1 - 0.3, y1 - 0.3), P(x0 + 0.3, y1 - 0.3)], null, this.tint(pal.rug, pal.dark ? 12 : -12));
+        const st = this.tint(pal.rug, pal.dark ? 26 : 24);
+        for (let x = x0 + 0.07; x < x1; x += STEP * 3) { dot(P(x, y0 + 0.07), st); dot(P(x, y1 - 0.07), st); }
+        for (let y = y0 + 0.07; y < y1; y += STEP * 3) { dot(P(x0 + 0.07, y), st); dot(P(x1 - 0.07, y), st); }
+      }
+      this.poly([P(pp.x0 - 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y + 1.3), P(pp.x0 - 0.6, pp.y + 1.3)], pal.mat);
+      this.poly([P(pp.x0 - 0.5, pp.y - 1.3), P(pp.x1 + 0.5, pp.y - 1.3), P(pp.x1 + 0.5, pp.y + 1.2), P(pp.x0 - 0.5, pp.y + 1.2)], null, this.tint(pal.mat, pal.dark ? 14 : -14));
+
+      // Where floor meets wall the light does not reach: two soft bands.
+      for (const [d0, d1, a] of [[0, 0.16, 0.2], [0.16, 0.38, 0.09]]) {
+        this.poly([P(0, d0), P(W, d0), P(W, d1), P(0, d1)], `rgba(0,0,0,${a})`);
+        this.poly([P(d0, 0.38), P(d1, 0.38), P(d1, D), P(d0, D)], `rgba(0,0,0,${a})`);
+      }
+
+      // Walls: panelled below a rail, a scatter of flecks above it.
+      const wall = (along, len, base) => {
+        const Q = (u, z) => (along === 'x' ? P(u, 0, z) : P(0, u, z));
+        const wain = this.tint(base, pal.dark ? -8 : -14), rail = this.tint(base, pal.dark ? 15 : 9);
+        const groove = this.tint(wain, pal.dark ? -10 : -14), lip = this.tint(wain, pal.dark ? 9 : 10);
+        this.poly([Q(0, 0), Q(len, 0), Q(len, WALL_H), Q(0, WALL_H)], base);
+        this.poly([Q(0, 0.12), Q(len, 0.12), Q(len, 0.78), Q(0, 0.78)], wain);
+        for (let u = 0.14; u < len - 0.3; u += 1) {
+          const u1 = Math.min(len - 0.12, u + 0.74);
+          this.poly([Q(u, 0.24), Q(u1, 0.24), Q(u1, 0.66), Q(u, 0.66)], null, groove);
+          this.seg(Q(u, 0.24), Q(u1, 0.24), lip, 0, -1);
+        }
+        this.poly([Q(0, 0.78), Q(len, 0.78), Q(len, 0.85), Q(0, 0.85)], rail);
+        this.seg(Q(0, 0.78), Q(len, 0.78), groove);
+        const fleck = this.tint(base, pal.dark ? 9 : -9);
+        for (let u = 0.3, k = 0; u < len - 0.1; u += 0.5, k++) {
+          for (let z = 1.08 + (k % 2) * 0.22; z < WALL_H - 0.12; z += 0.44) {
+            const p = Q(u, z);
+            dot(p, fleck); dot(p, fleck, 0, -1); dot(p, fleck, along === 'x' ? 1 : -1, 0);
+          }
+        }
+      };
+      wall('x', W, pal.wallL);
+      wall('y', D, pal.wallR);
+      this.poly([P(0, 0, WALL_H), P(W, 0, WALL_H), P(W, -0.15, WALL_H), P(-0.15, -0.15, WALL_H), P(-0.15, D, WALL_H), P(0, D, WALL_H)], pal.wallTop);
+      this.poly([P(0, 0, 0), P(W, 0, 0), P(W, 0, 0.12), P(0, 0, 0.12)], pal.trim);
+      this.poly([P(0, 0, 0), P(0, D, 0), P(0, D, 0.12), P(0, 0, 0.12)], pal.trim);
+      this.seg(P(0, 0, 0.12), P(W, 0, 0.12), this.tint(pal.trim, pal.dark ? 18 : 16));
+      this.seg(P(0, 0, 0.12), P(0, D, 0.12), this.tint(pal.trim, pal.dark ? 18 : 16));
+    }
+
+
     drawRoom() {
       const { W, D, OW, MR, PY, pp } = this.plan;
       const pal = this.pal;
       const P = (x, y, z) => this.iso(x, y, z);
       const t = this.t / 1000;
 
-      // floors: wood office, carpet meeting room, tiled pantry, wood lounge
-      for (let x = 0; x < Math.ceil(OW); x++) {
-        for (let y = 0; y < Math.ceil(D); y++) {
-          const x1 = Math.min(OW, x + 1), y1 = Math.min(D, y + 1);
-          this.poly([P(x, y), P(x1, y), P(x1, y1), P(x, y1)], (x + y) % 2 ? pal.wood1 : pal.wood2);
-        }
+      // Floors and walls do not change from frame to frame, so they are
+      // painted once into a layer of art pixels and blitted. That is what
+      // pays for grain on every plank and panelling on every wall.
+      {
+        const bg = this.roomLayer();
+        const c = this.ctx;
+        c.imageSmoothingEnabled = false;
+        c.drawImage(bg, this.bgAt.x, this.bgAt.y, bg.width * ART, bg.height * ART);
       }
-      for (let y = 0.5; y < D; y += 0.5) this.poly([P(0, y), P(OW, y), P(OW, y + 0.012), P(0, y + 0.012)], pal.woodLine);
-      this.poly([P(OW, 0), P(W, 0), P(W, MR), P(OW, MR)], pal.carpet);
-      for (let x = OW + 0.5; x < W; x += 0.5) this.poly([P(x, 0), P(x + 0.015, 0), P(x + 0.015, MR), P(x, MR)], pal.carpetLine);
-      for (let i = 0; i < Math.ceil((W - OW) * 2); i++) {
-        for (let j = 0; j < Math.ceil((PY - MR) * 2); j++) {
-          const x = OW + i / 2, y = MR + j / 2;
-          const x1 = Math.min(W, x + 0.5), y1 = Math.min(PY, y + 0.5);
-          this.poly([P(x, y), P(x1, y), P(x1, y1), P(x, y1)], (i + j) % 2 ? pal.tileA : pal.tileB);
-        }
-      }
-      for (let x = Math.floor(OW); x < W; x++) {
-        for (let y = PY; y < D; y++) {
-          const x0 = Math.max(OW, x), x1 = Math.min(W, x + 1), y1 = Math.min(D, y + 1);
-          this.poly([P(x0, y), P(x1, y), P(x1, y1), P(x0, y1)], (x + Math.floor(y)) % 2 ? pal.wood1 : pal.wood2);
-        }
-      }
-      this.poly([P(OW + 0.3, PY + 0.6), P(OW + 4.3, PY + 0.6), P(OW + 4.3, D - 0.4), P(OW + 0.3, D - 0.4)], pal.rug);
-      this.poly([P(OW + 0.5, PY + 0.8), P(OW + 4.1, PY + 0.8), P(OW + 4.1, D - 0.6), P(OW + 0.5, D - 0.6)], null, pal.rugEdge);
-      this.poly([P(pp.x0 - 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y + 1.3), P(pp.x0 - 0.6, pp.y + 1.3)], pal.mat);
-
-      // walls
-      this.poly([P(0, 0, 0), P(W, 0, 0), P(W, 0, WALL_H), P(0, 0, WALL_H)], pal.wallL);
-      this.poly([P(0, 0, 0), P(0, D, 0), P(0, D, WALL_H), P(0, 0, WALL_H)], pal.wallR);
-      this.poly([P(0, 0, WALL_H), P(W, 0, WALL_H), P(W, -0.15, WALL_H), P(-0.15, -0.15, WALL_H), P(-0.15, D, WALL_H), P(0, D, WALL_H)], pal.wallTop);
-      this.poly([P(0, 0, 0), P(W, 0, 0), P(W, 0, 0.12), P(0, 0, 0.12)], pal.trim);
-      this.poly([P(0, 0, 0), P(0, D, 0), P(0, D, 0.12), P(0, 0, 0.12)], pal.trim);
 
       // windows with the real sky outside
       const sky = skyColor();
