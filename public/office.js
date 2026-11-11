@@ -181,6 +181,46 @@
     return cv;
   }
 
+  // ---- Hand-placed pixel art ---------------------------------------------
+  // Shading here is never a blend. A material is a short ramp from dark to
+  // light, and a lit value picks from it through a 4x4 Bayer matrix, so two
+  // neighbouring tones dither into a third without a new colour appearing.
+  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+  function rampPick(pal, val, x, y) {
+    const th = 0.25 + 0.5 * (BAYER[y & 3][x & 3] + 0.5) / 16;
+    const i = Math.floor(Math.max(0, Math.min(1, val)) * (pal.length - 1) + th);
+    return pal[Math.max(0, Math.min(pal.length - 1, i))];
+  }
+  function pxDisc(c, cx, cy, rx, ry, col) {
+    c.fillStyle = col;
+    for (let y = -ry; y <= ry; y++) {
+      const w = Math.round(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry || 1))));
+      c.fillRect(cx - w, cy + y, w * 2 + 1, 1);
+    }
+  }
+  // The outline of an ellipse, one pixel thick, for a ring on the floor.
+  function pxRing(c, cx, cy, rx, ry, col) {
+    c.fillStyle = col;
+    const half = (y) => (Math.abs(y) > ry ? -1 : Math.round(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry || 1)))));
+    for (let y = -ry; y <= ry; y++) {
+      const w = half(y), wn = half(Math.abs(y) + 1);
+      const n = w - wn;
+      c.fillRect(cx - w, cy + y, n, 1);
+      c.fillRect(cx + w - n + 1, cy + y, n, 1);
+    }
+  }
+  // A rounded lump lit from the upper left: foliage, a beanbag, a lampshade.
+  function pxLump(c, cx, cy, rx, ry, pal, outline) {
+    if (outline) pxDisc(c, cx, cy, rx + 1, ry + 1, outline);
+    for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) {
+      const nx = x / (rx + 0.5), ny = y / (ry + 0.5), d2 = nx * nx + ny * ny;
+      if (d2 > 1) continue;
+      const lit = -0.5 * nx - 0.55 * ny + 0.67 * Math.sqrt(1 - d2);
+      c.fillStyle = rampPick(pal, (lit + 0.3) / 1.25, cx + x, cy + y);
+      c.fillRect(cx + x, cy + y, 1, 1);
+    }
+  }
+
   const SKIN = ['#f3cfb0', '#e5b38f', '#c98d66', '#9a6646', '#6e4630', '#f7dcc7'];
   const HAIR = ['#2a2019', '#4b3020', '#8a4b2a', '#c99a5b', '#1c1c1c', '#8c8c8c', '#a33a2c', '#3d3550'];
   const SHIRT = {
@@ -441,7 +481,8 @@
       const items = [];
       const pois = [];
       const desks = [];
-      const add = (depth, draw) => items.push({ depth, draw });
+      // `live` marks furniture that animates; everything else is baked to a sprite.
+      const add = (depth, draw, live = false) => items.push({ depth, draw, live });
       // Semantic list of what is where, for renderers that don't use the 2D
       // draw closures (the 3D view).
       const props = [];
@@ -485,13 +526,13 @@
 
       // ---- open office extras
       const rx = OW - 1.15;
-      add(rx + 0.35 + 0.5, () => this.serverRack(rx, 0.2));
+      add(rx + 0.35 + 0.5, () => this.serverRack(rx, 0.2), true);
       prop('rack', { x: rx, y: 0.2 });
       prop('printer', { x: OW - 2.3, y: 0.25 });
       solid(rx, 0.2, 0.7, 0.6);
       add(OW - 2.3 + 0.3 + 0.5, () => this.printer(OW - 2.3, 0.25));
       solid(OW - 2.3, 0.25, 0.75, 0.55);
-      for (const [x, y] of [[0.45, 0.45], [0.45, OD - 0.2]]) { add(x + y, () => this.plant(x, y)); prop('plant', { x, y }); solid(x - 0.2, y - 0.2, 0.4, 0.4); }
+      for (const [x, y] of [[0.45, 0.45], [0.45, OD - 0.2]]) { add(x + y, () => this.plant(x, y), true); prop('plant', { x, y }); solid(x - 0.2, y - 0.2, 0.4, 0.4); }
       const windows = [];
       for (let x = 1.0; x < OW - 2.6; x += 2.4) {
         windows.push(x);
@@ -511,17 +552,17 @@
       // ---- front corner: vending machines, foosball, phone booth
       const fy = OD + 3.7;
       if (D - fy >= 3.4) {
-        add(0.5 + fy + 0.4, () => this.vending(0.12, fy, '#c0392b'));
+        add(0.5 + fy + 0.4, () => this.vending(0.12, fy, '#c0392b'), true);
         prop('vending', { x: 0.12, y: fy, color: '#c0392b' });
         prop('vending', { x: 0.12, y: fy + 0.8, color: '#2f6fb0' });
-        add(0.5 + fy + 1.2, () => this.vending(0.12, fy + 0.8, '#2f6fb0'));
+        add(0.5 + fy + 1.2, () => this.vending(0.12, fy + 0.8, '#2f6fb0'), true);
         solid(0.1, fy, 0.75, 1.55);
         poi(1.3, fy + 0.4, 'vending', 'back');
         poi(1.3, fy + 1.2, 'vending', 'back');
       }
       if (D - fy >= 2.2) {
         const fx = 3.0, fby = fy + 0.4;
-        add(fx + 0.8 + fby + 0.4, () => this.foosball(fx, fby));
+        add(fx + 0.8 + fby + 0.4, () => this.foosball(fx, fby), true);
         prop('foosball', { x: fx, y: fby });
         solid(fx, fby, 1.6, 0.8, 0.05);
         poi(fx - 0.45, fby + 0.4, 'foosball', 'side', { pair: 'fb' });
@@ -534,7 +575,7 @@
         solid(bx + 1.25, by - 0.05, 0.1, 1.4, 0.03);
         solid(bx + 0.85, by + 1.25, 0.5, 0.1, 0.03);
         poi(bx + 0.65, by + 0.6, 'phone', 'front', { sit: 0.45 });
-        add(OW - 0.45 + D - 0.6, () => this.plant(OW - 0.45, D - 0.6));
+        add(OW - 0.45 + D - 0.6, () => this.plant(OW - 0.45, D - 0.6), true);
         prop('plant', { x: OW - 0.45, y: D - 0.6 });
       }
 
@@ -562,7 +603,7 @@
         poi(cx, mty + 1.8, 'meeting', 'back', { sit: 0.42 });
       }
       poi(mx + 3.6, 0.65, 'whiteboard', 'back');
-      add(W - 0.45 + 0.45, () => this.plant(W - 0.45, 0.45));
+      add(W - 0.45 + 0.45, () => this.plant(W - 0.45, 0.45), true);
       prop('plant', { x: W - 0.45, y: 0.45 });
       solid(W - 0.65, 0.25, 0.4, 0.4);
 
@@ -575,11 +616,11 @@
       prop('sink', { x: mx + 3.9, y: cy + 0.12 });
       prop('fridge', { x: W - 1.15, y: cy });
       prop('cooler', { x: mx + 0.35, y: cy + 0.05 });
-      add(mx + 2.65 + cy + 0.35, () => this.coffeeMachine(mx + 2.4, cy + 0.12));
+      add(mx + 2.65 + cy + 0.35, () => this.coffeeMachine(mx + 2.4, cy + 0.12), true);
       add(mx + 4.15 + cy + 0.35, () => this.sink(mx + 3.9, cy + 0.12));
       add(W - 0.75 + cy + 0.4, () => this.fridge(W - 1.15, cy));
       solid(W - 1.15, cy, 0.85, 0.75);
-      add(mx + 0.55 + cy + 0.25, () => this.waterCooler(mx + 0.35, cy + 0.05));
+      add(mx + 0.55 + cy + 0.25, () => this.waterCooler(mx + 0.35, cy + 0.05), true);
       solid(mx + 0.3, cy, 0.5, 0.5);
       poi(mx + 2.65, cy + 1.2, 'coffee', 'back');
       poi(mx + 4.15, cy + 1.2, 'sink', 'back');
@@ -619,14 +660,14 @@
       poi(lx + 0.4, ly + 3.6, 'beanbag', 'front', { sit: 0.18 });
       poi(lx + 2.6, ly + 3.6, 'beanbag', 'front', { sit: 0.18 });
       const ax = W - 1.2, ay = ly + 1.0;
-      add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
+      add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay), true);
       prop('arcade', { x: ax, y: ay });
       prop('plant', { x: W - 0.5, y: D - 0.5 });
       prop('lamp', { x: lx - 0.2, y: D - 0.6 });
       prop('rug', { x: OW + 0.3, y: PY + 0.6, w: 4.0, d: D - PY - 1.0 });
       solid(ax, ay, 0.7, 0.7);
       poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
-      add(W - 0.5 + D - 0.5, () => this.plant(W - 0.5, D - 0.5));
+      add(W - 0.5 + D - 0.5, () => this.plant(W - 0.5, D - 0.5), true);
       add(lx - 0.2 + D - 0.6, () => this.floorLamp(lx - 0.2, D - 0.6));
 
       const posters = [
@@ -974,6 +1015,73 @@
 
     // ------------------------------------------------------------ room shell
 
+    // Furniture that never changes is painted once into a sprite of its own
+    // and blitted from then on. The room is some seven hundred polygons, each
+    // filled a row at a time; redrawing them all every frame was fifteen
+    // thousand fills, and that - not the enlargement it was blamed on - was
+    // the whole frame budget.
+    drawItem(it) {
+      if (it.live) { it.draw(); return; }
+      const key = this.bgKey + '|' + (skyColor().night ? 'n' : 'd');
+      if (it.bakedFor !== key) {
+        // A few per frame: baking the room in one go would stall the first one.
+        if (this.bakedThisFrame >= 4) { it.draw(); return; }
+        this.bakedThisFrame++;
+        it.sprite = this.bakeItem(it);
+        it.bakedFor = key;
+      }
+      const sp = it.sprite;
+      if (!sp) return;
+      const c = this.ctx;
+      c.imageSmoothingEnabled = false;
+      c.drawImage(sp.cv, sp.x, sp.y, sp.cv.width * ART, sp.cv.height * ART);
+    }
+
+    bakeItem(it) {
+      const bg = this.bg;
+      const tmp = this.bakeTmp || (this.bakeTmp = document.createElement('canvas'));
+      if (tmp.width !== bg.width || tmp.height !== bg.height) { tmp.width = bg.width; tmp.height = bg.height; }
+      const g = tmp.getContext('2d', { willReadFrequently: true });
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, tmp.width, tmp.height);
+      // The same frame of reference as the room layer, so the sprite lands on
+      // the same pixel grid when it is put back.
+      g.setTransform(1 / ART, 0, 0, 1 / ART, -this.bgAt.x / ART, -this.bgAt.y / ART);
+      const keep = this.ctx;
+      this.ctx = g;
+      try { it.draw(); } finally { this.ctx = keep; }
+      const data = g.getImageData(0, 0, tmp.width, tmp.height).data;
+      let x0 = tmp.width, y0 = tmp.height, x1 = -1, y1 = -1;
+      for (let y = 0, i = 3; y < tmp.height; y++) {
+        for (let x = 0; x < tmp.width; x++, i += 4) {
+          if (!data[i]) continue;
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+      if (x1 < 0) return null;
+      const cv = document.createElement('canvas');
+      cv.width = x1 - x0 + 1; cv.height = y1 - y0 + 1;
+      cv.getContext('2d').drawImage(tmp, x0, y0, cv.width, cv.height, 0, 0, cv.width, cv.height);
+      return { cv, x: this.bgAt.x + x0 * ART, y: this.bgAt.y + y0 * ART };
+    }
+
+    // Run fn with one unit = one art pixel and the origin on a projected
+    // point, snapped to whole pixels. Everything hand-placed goes through it.
+    art(p, fn) {
+      const c = this.ctx;
+      const m = c.getTransform();
+      c.save();
+      c.setTransform(1, 0, 0, 1, Math.round(p.x * m.a + m.e), Math.round(p.y * m.d + m.f));
+      fn(c);
+      c.restore();
+    }
+
+    // Five tones around one colour, dark to light.
+    rampOf(base) {
+      return [this.tint(base, -40), this.tint(base, -18), base, this.tint(base, 18), this.tint(base, 36)];
+    }
+
     // -------------------------------------------------------- static room layer
 
     roomLayer() {
@@ -1255,18 +1363,21 @@
     plant(x, y) {
       const pal = this.pal;
       this.box(x - 0.18, y - 0.18, 0, 0.36, 0.36, 0.3, this.shade(pal.pot, 10), pal.pot, this.shade(pal.pot, -15));
-      const c = this.ctx;
-      const b = this.iso(x, y, 0.3);
-      const sway = Math.sin(this.t / 1400 + x) * 0.05;
-      c.fillStyle = pal.plant;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        c.beginPath();
-        c.ellipse(b.x + Math.cos(a) * 6, b.y - 13 + Math.sin(a) * 3, 5.5, 13, a / 3 + sway, 0, Math.PI * 2);
-        c.fill();
-      }
-      c.fillStyle = this.shade(pal.plant, 22);
-      c.beginPath(); c.ellipse(b.x, b.y - 20, 5, 10, sway, 0, Math.PI * 2); c.fill();
+      // Three lit clumps of leaves rather than soft blobs, which a pixel
+      // buffer turns to fog. The top one leans now and then.
+      const lean = Math.sin(this.t / 1400 + x) > 0.55 ? 1 : 0;
+      const leaf = this.rampOf(pal.plant);
+      const edge = this.tint(pal.plant, -58);
+      this.art(this.iso(x, y, 0.3), (c) => {
+        c.fillStyle = edge; c.fillRect(0, -3, 1, 3);
+        pxLump(c, -3, -5, 3, 3, leaf, edge);
+        pxLump(c, 3, -6, 3, 3, leaf, edge);
+        pxLump(c, lean, -10, 3, 4, leaf, edge);
+        c.fillStyle = leaf[4];
+        c.fillRect(-5, -8, 1, 1); c.fillRect(5, -9, 1, 1); c.fillRect(lean - 1, -14, 1, 1);
+        c.fillStyle = edge;
+        c.fillRect(-1, -6, 1, 1); c.fillRect(2, -8, 1, 1);
+      });
     }
 
     serverRack(x, y) {
@@ -1385,14 +1496,15 @@
     }
 
     beanbag(x, y, color) {
-      const c = this.ctx;
-      const p = this.iso(x, y, 0);
-      c.fillStyle = this.shade(color, -25);
-      c.beginPath(); c.ellipse(p.x, p.y - 4, 20, 11, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = color;
-      c.beginPath(); c.ellipse(p.x, p.y - 8, 18, 10, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = this.shade(color, 20);
-      c.beginPath(); c.ellipse(p.x - 3, p.y - 14, 10, 6, -0.2, 0, Math.PI * 2); c.fill();
+      const pal5 = this.rampOf(color);
+      const edge = this.tint(color, -70);
+      this.art(this.iso(x, y, 0), (c) => {
+        pxDisc(c, 0, -1, 10, 4, this.pal.shadow);
+        pxLump(c, 0, -5, 9, 5, pal5, edge);
+        // the dent where someone sat
+        c.fillStyle = pal5[1];
+        c.fillRect(-3, -6, 6, 1); c.fillRect(-2, -5, 4, 1);
+      });
     }
 
     books(x0, x1, y) {
@@ -1405,7 +1517,12 @@
         while (bx < x1 - 0.1) {
           const bw = 0.07 + ((i * 13) % 5) * 0.015;
           const bh = 0.25 + ((i * 7) % 4) * 0.03;
-          if (i % 7 !== 3) this.poly([P(bx, y, z), P(bx + bw, y, z), P(bx + bw, y, z + bh), P(bx, y, z + bh)], cols[i % cols.length]);
+          if (i % 7 !== 3) {
+            const col = cols[i % cols.length];
+            this.poly([P(bx, y, z), P(bx + bw, y, z), P(bx + bw, y, z + bh), P(bx, y, z + bh)], col);
+            this.seg(P(bx, y, z), P(bx, y, z + bh), this.tint(col, 30));
+            if (i % 3 === 0) this.seg(P(bx, y, z + bh * 0.62), P(bx + bw, y, z + bh * 0.62), this.tint(col, 55));
+          }
           bx += bw + 0.015;
           i++;
         }
@@ -1427,17 +1544,32 @@
     }
 
     floorLamp(x, y) {
-      const c = this.ctx;
-      const b = this.iso(x, y, 0), t = this.iso(x, y, 1.7);
-      if (skyColor().night) {
-        c.fillStyle = 'rgba(255,220,140,.14)';
-        c.beginPath(); c.ellipse(b.x, b.y, 50, 25, 0, 0, Math.PI * 2); c.fill();
+      const c0 = this.ctx;
+      const b = this.iso(x, y, 0);
+      const night = skyColor().night;
+      if (night) {
+        c0.fillStyle = 'rgba(255,220,140,.14)';
+        c0.beginPath(); c0.ellipse(b.x, b.y, 50, 25, 0, 0, Math.PI * 2); c0.fill();
       }
-      c.strokeStyle = '#333'; c.lineWidth = 2;
-      c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(t.x, t.y); c.stroke();
-      c.fillStyle = '#333'; c.beginPath(); c.ellipse(b.x, b.y, 7, 3.5, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#f3e3b5';
-      c.beginPath(); c.moveTo(t.x - 9, t.y + 4); c.lineTo(t.x + 9, t.y + 4); c.lineTo(t.x + 5, t.y - 8); c.lineTo(t.x - 5, t.y - 8); c.closePath(); c.fill();
+      const brass = ['#5b4318', '#8a6a26', '#b8943e', '#e2c66e'];
+      const shade = night ? ['#d9b45e', '#f0d488', '#fff0b8', '#fffbe0'] : ['#b9a172', '#d6c296', '#ecdcb6', '#faf2d8'];
+      this.art(b, (c) => {
+        pxDisc(c, 0, 0, 4, 1, this.pal.shadow);
+        pxDisc(c, 0, -1, 3, 1, brass[1]);
+        c.fillStyle = brass[3]; c.fillRect(-2, -2, 3, 1);
+        c.fillStyle = brass[1]; c.fillRect(0, -26, 1, 24);
+        c.fillStyle = brass[3]; c.fillRect(0, -15, 1, 1); c.fillRect(-1, -14, 3, 1);
+        // the shade: a cone, lit from the left, with a darker rim
+        for (let r = 0; r < 7; r++) {
+          const half = 2 + Math.floor(r * 0.6);
+          for (let i = -half; i <= half; i++) {
+            c.fillStyle = rampPick(shade, 1 - Math.abs((i + half) / (half * 2 + 1) - 0.3) * 1.5, i, r);
+            c.fillRect(i, -33 + r, 1, 1);
+          }
+        }
+        c.fillStyle = shade[0]; c.fillRect(-6, -26, 13, 1);
+        c.fillStyle = brass[0]; c.fillRect(-1, -34, 3, 1);
+      });
     }
 
     vending(x, y, color) {
@@ -1528,16 +1660,54 @@
           this.ctx.globalAlpha = 1;
         }
       }
-      // personal touches, stable per desk
+      // Things people leave on desks, chosen by where the desk stands so a
+      // desk keeps its clutter. A bare desk in a room this detailed looks
+      // unfinished; three pixels of mug fix that.
       const h = hash(`${x.toFixed(1)},${y.toFixed(1)}`);
-      if (h % 3 === 0) this.box(x + 1.12, y + 0.3, 0.79, 0.12, 0.12, 0.13, '#f2f2f2', '#d0d0d0', '#bbb');
-      if (h % 5 === 1) {
-        this.box(x + 0.14, y + 0.24, 0.79, 0.12, 0.12, 0.08, pal.pot, pal.pot, this.shade(pal.pot, -15));
-        const q = this.iso(x + 0.2, y + 0.3, 0.87);
-        this.ctx.fillStyle = pal.plant;
-        this.ctx.beginPath(); this.ctx.ellipse(q.x, q.y - 4, 4, 6, 0, 0, Math.PI * 2); this.ctx.fill();
+      const P = (a, b, cc) => this.iso(a, b, cc);
+      const top = 0.79;
+      // key rows on the keyboard
+      {
+        const ky = y + (dk.side === 's' ? 0.48 : 0.16);
+        this.seg(P(x + 0.5, ky + 0.05, top + 0.025), P(x + 0.9, ky + 0.05, top + 0.025), '#b9b9b9');
+        this.seg(P(x + 0.5, ky + 0.11, top + 0.025), P(x + 0.9, ky + 0.11, top + 0.025), '#b9b9b9');
       }
-      if (h % 4 === 2) this.box(x + 0.12, y + 0.45, 0.79, 0.22, 0.15, 0.05, '#f2d16b', '#d9b84f', '#c4a33f');
+      if (h % 3 === 0) {
+        // mug, with coffee in it and a handle
+        this.art(P(x + 1.18, y + 0.36, top), (c) => {
+          c.fillStyle = '#8f8f8f'; c.fillRect(-2, -4, 4, 5);
+          c.fillStyle = '#fafafa'; c.fillRect(-1, -4, 3, 4);
+          c.fillStyle = '#d5d5d5'; c.fillRect(1, -3, 1, 3);
+          c.fillStyle = '#6b3f22'; c.fillRect(-1, -4, 3, 1);
+          c.fillStyle = '#8f8f8f'; c.fillRect(2, -2, 1, 1); c.fillRect(3, -3, 1, 2);
+        });
+      }
+      if (h % 5 === 1) {
+        // a small plant in a pot
+        this.box(x + 0.14, y + 0.24, top, 0.12, 0.12, 0.08, pal.pot, pal.pot, this.shade(pal.pot, -15));
+        this.art(P(x + 0.2, y + 0.3, top + 0.08), (c) => {
+          pxLump(c, 0, -3, 2, 2, this.rampOf(pal.plant), this.tint(pal.plant, -58));
+          c.fillStyle = this.tint(pal.plant, 36); c.fillRect(-1, -6, 1, 1);
+        });
+      }
+      if (h % 4 === 2) {
+        // two books, the top one askew
+        this.box(x + 0.12, y + 0.45, top, 0.22, 0.15, 0.05, '#f2d16b', '#d9b84f', '#c4a33f');
+        this.box(x + 0.15, y + 0.46, top + 0.05, 0.17, 0.12, 0.04, '#c8644f', '#a84f3d', '#93432f');
+      }
+      if (h % 2 === 0) {
+        // a sheet of paper with a few lines on it
+        const px0 = x + 0.98, py0 = y + (dk.side === 's' ? 0.52 : 0.1);
+        this.poly([P(px0, py0, top), P(px0 + 0.24, py0, top), P(px0 + 0.24, py0 + 0.18, top), P(px0, py0 + 0.18, top)], '#fbfaf3', '#cfcabd');
+        this.seg(P(px0 + 0.04, py0 + 0.06, top), P(px0 + 0.2, py0 + 0.06, top), '#a9b4c4');
+        this.seg(P(px0 + 0.04, py0 + 0.12, top), P(px0 + 0.16, py0 + 0.12, top), '#a9b4c4');
+      }
+      if (h % 4 === 1 && dk.side === 's') {
+        // a sticky note on the monitor's bezel
+        const mx = x + 0.42, my = y + 0.18, mz = top + 0.18;
+        this.poly([P(mx + 0.44, my, mz + 0.3), P(mx + 0.56, my, mz + 0.3), P(mx + 0.56, my, mz + 0.42), P(mx + 0.44, my, mz + 0.42)], '#f6dc5c');
+        this.seg(P(mx + 0.46, my, mz + 0.37), P(mx + 0.54, my, mz + 0.37), '#b79a2c');
+      }
     }
 
     screen(x, y, z, w, h, p) {
@@ -1561,18 +1731,25 @@
           const zz = z + h - 0.05 - ((i + scroll) * h) / 5;
           const len = 0.12 + ((p.h >> ((i + 8) & 15)) % 7) / 20;
           const a = P(x + 0.05, y, zz), b = P(x + 0.05 + Math.min(len, w - 0.1), y, zz);
-          c.strokeStyle = i % 3 === 0 ? col : 'rgba(255,255,255,.55)';
-          c.lineWidth = 1.5;
-          c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+          this.seg(a, b, i % 3 === 0 ? col : 'rgba(255,255,255,.6)');
         }
       } else {
+        // A glyph in pixels: a font at this size is five smeared pixels.
         const m = P(x + w / 2, y, z + h / 2);
-        c.fillStyle = col;
-        c.globalAlpha = st === 'thinking' ? 0.5 + 0.4 * Math.sin(t * 3 + p.phase) : 0.9;
-        c.font = '700 10px ui-sans-serif, system-ui, sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText({ thinking: '…', waiting: '?', error: '!' }[st] || '', m.x, m.y);
+        const glyph = {
+          thinking: ['#.#.#'],
+          waiting: ['###', '..#', '.##', '...', '.#.'],
+          error: ['#', '#', '#', '.', '#'],
+        }[st];
+        if (glyph) {
+          const a = st === 'thinking' ? 0.5 + 0.4 * Math.sin(t * 3 + p.phase) : 0.95;
+          this.art(m, (g) => {
+            g.globalAlpha = a;
+            g.fillStyle = col;
+            const gw = glyph[0].length, gh = glyph.length;
+            glyph.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') g.fillRect(i - (gw >> 1), j - (gh >> 1), 1, 1); });
+          });
+        }
       }
       c.restore();
       c.save();
@@ -1626,13 +1803,10 @@
       const bob = moving ? Math.abs(step) * 1.5 : 0;
 
       const fb = this.iso(p.x, p.y, 0);
-      c.fillStyle = this.pal.shadow;
-      c.beginPath(); c.ellipse(fb.x, fb.y, 10, 5, 0, 0, Math.PI * 2); c.fill();
-      if (this.hoverKey === p.key) {
-        c.strokeStyle = STATUS_COLOR[s.status] || '#888';
-        c.lineWidth = 2;
-        c.beginPath(); c.ellipse(fb.x, fb.y, 14, 7, 0, 0, Math.PI * 2); c.stroke();
-      }
+      this.art(fb, (g) => {
+        pxDisc(g, 0, 0, 6, 2, this.pal.shadow);
+        if (this.hoverKey === p.key) pxRing(g, 0, 0, 9, 4, STATUS_COLOR[s.status] || '#888');
+      });
 
       let x = b.x;
       const y = b.y - bob;
@@ -1976,6 +2150,7 @@
     }
 
     draw() {
+      this.bakedThisFrame = 0;
       this.fitCamera();
       const S = this.cam.S;
       // The buffer holds art pixels: the canvas divided by S, so one buffer
@@ -1999,18 +2174,18 @@
       const items = [...this.plan.items];
       for (const dk of this.plan.desks) {
         const p = occupant.get(dk);
-        items.push({ depth: dk.x + 0.7 + dk.y + 0.4, draw: () => this.desk(dk, p) });
-        items.push({ depth: dk.seat.x + dk.seat.y - 0.06, draw: () => this.chair(dk, p) });
+        items.push({ depth: dk.x + 0.7 + dk.y + 0.4, live: true, draw: () => this.desk(dk, p) });
+        items.push({ depth: dk.seat.x + dk.seat.y - 0.06, live: true, draw: () => this.chair(dk, p) });
       }
       for (const p of this.people.values()) items.push({ depth: p.x + p.y + 0.01, person: p });
-      items.push({ depth: this.cat.x + this.cat.y, draw: () => this.drawCat() });
+      items.push({ depth: this.cat.x + this.cat.y, live: true, draw: () => this.drawCat() });
       items.sort((a, b) => a.depth - b.depth);
 
       this.hit = [];
       const heads = [];
       for (const it of items) {
         if (it.person) heads.push([it.person, this.person(it.person)]);
-        else it.draw();
+        else this.drawItem(it);
       }
       this.pingPongBall();
 
