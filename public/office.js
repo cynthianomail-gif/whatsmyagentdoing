@@ -9,6 +9,8 @@
   const WALL_H = 2.4;
   const WORKING = new Set(['thinking', 'tool', 'typing', 'waiting', 'error']);
   const MAX_WANDERERS = 7;
+  const MAX_KITTENS = 4;           // per parent
+  const KITTEN_LINGER = 90 * 1000; // a finished kitten stays this long, then goes
   const SPEED = 2.1; // tiles / second
 
   // The office is staffed by cats. One breed per session, picked from its key,
@@ -107,39 +109,46 @@
     return out;
   }
 
-  function catGrid(br, seated, front, eyes) {
+  function catGrid(br, seated, front, eyes, kit) {
     const g = pxGrid();
-    const hcx = PXC, hcy = 8.2, hrx = 5.6, hry = 4.8;
-    const bcy = seated ? 15.2 : 15.0, brx = seated ? 4.8 : 4.0, bry = seated ? 4.0 : 4.4;
+    // A kitten is the same cat on a smaller frame: it shares the canvas and
+    // the line the feet stand on, so everything that draws a cat draws it.
+    const hcx = PXC, hcy = kit ? 12.2 : 8.2, hrx = kit ? 4.3 : 5.6, hry = kit ? 3.7 : 4.8;
+    const bcy = kit ? 17.3 : seated ? 15.2 : 15.0, brx = kit ? (seated ? 3.5 : 3.0) : seated ? 4.8 : 4.0, bry = kit ? 2.6 : seated ? 4.0 : 4.4;
+    const E = kit ? [4.1, 1.2, 3.3, 5.6, 1.2, 2.2] : [5.4, 1.6, 4.2, 7.6, 1.6, 3.0];
     const earFur = br.mask ? PX_DARK : PX_FUR;
     const lum = (h) => { const n = parseInt(h.slice(1), 16); return 0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255); };
     const darkFace = !!br.mask || lum(br.fur) < 90;
     // Ears first, head over them: the roots vanish into the head, and the tips
     // have to clear the head's ellipse or they end up as two bumps.
-    pxTri(g, hcx - 5.4, hcy - 1.6, hcx - 4.2, hcy - 7.6, hcx - 1.6, hcy - 3.0, earFur);
-    pxTri(g, hcx + 5.4, hcy - 1.6, hcx + 4.2, hcy - 7.6, hcx + 1.6, hcy - 3.0, earFur);
+    pxTri(g, hcx - E[0], hcy - E[1], hcx - E[2], hcy - E[3], hcx - E[4], hcy - E[5], earFur);
+    pxTri(g, hcx + E[0], hcy - E[1], hcx + E[2], hcy - E[3], hcx + E[4], hcy - E[5], earFur);
     pxEllipse(g, hcx, bcy, brx, bry, PX_FUR);
     pxEllipse(g, hcx, bcy + 0.8, brx - 2.0, bry - 1.3, PX_BELLY);
-    for (const sx of [-1, 1]) pxEllipse(g, hcx + sx * 2.3, bcy + bry - 0.5, 1.4, 1.0, PX_BELLY);
-    if (br.patches) pxEllipse(g, hcx + 3, bcy - 1, 1.6, 1.6, PX_SOOT);
+    for (const sx of [-1, 1]) pxEllipse(g, hcx + sx * (kit ? 1.7 : 2.3), bcy + bry - 0.5, kit ? 1.0 : 1.4, kit ? 0.8 : 1.0, PX_BELLY);
+    if (br.patches) pxEllipse(g, hcx + (kit ? 2 : 3), bcy - (kit ? 0.6 : 1), kit ? 1.1 : 1.6, kit ? 1.1 : 1.6, PX_SOOT);
     pxEllipse(g, hcx, hcy, hrx, hry, PX_FUR);
     if (front) {
-      pxPut(g, hcx - 4, hcy - 4.4, PX_PINK); pxPut(g, hcx - 4, hcy - 5.4, PX_PINK);
-      pxPut(g, hcx + 4, hcy - 4.4, PX_PINK); pxPut(g, hcx + 4, hcy - 5.4, PX_PINK);
+      if (kit) {
+        pxPut(g, hcx - 3, hcy - 3.6, PX_PINK); pxPut(g, hcx + 3, hcy - 3.6, PX_PINK);
+      } else {
+        pxPut(g, hcx - 4, hcy - 4.4, PX_PINK); pxPut(g, hcx - 4, hcy - 5.4, PX_PINK);
+        pxPut(g, hcx + 4, hcy - 4.4, PX_PINK); pxPut(g, hcx + 4, hcy - 5.4, PX_PINK);
+      }
     }
-    if (br.stripes) for (const dx of [-2, 0, 2]) for (let k = 0; k < 2; k++) pxPut(g, hcx + dx, 4 + k, PX_DARK);
+    if (br.stripes) for (const dx of [-2, 0, 2]) for (let k = 0; k < (kit ? 1 : 2); k++) pxPut(g, hcx + dx, (kit ? 9 : 4) + k, PX_DARK);
     if (br.patches) {
       // Kept high and to the sides: a patch over an eye reads as an eyepatch.
-      pxEllipse(g, hcx - 4, hcy - 3, 1.6, 1.4, PX_GINGER);
-      pxEllipse(g, hcx + 4, hcy - 3, 1.4, 1.2, PX_SOOT);
+      pxEllipse(g, hcx - (kit ? 3 : 4), hcy - (kit ? 2.3 : 3), kit ? 1.2 : 1.6, kit ? 1.0 : 1.4, PX_GINGER);
+      pxEllipse(g, hcx + (kit ? 3 : 4), hcy - (kit ? 2.3 : 3), kit ? 1.1 : 1.4, kit ? 0.9 : 1.2, PX_SOOT);
     }
-    if (br.mask && front) pxEllipse(g, hcx, hcy + 1.4, 3.2, 2.6, PX_DARK);
+    if (br.mask && front) pxEllipse(g, hcx, hcy + (kit ? 1.0 : 1.4), kit ? 2.4 : 3.2, kit ? 2.0 : 2.6, PX_DARK);
 
     if (front) {
-      const ey = 8;
+      const ey = kit ? 12 : 8, low = kit ? 0 : 1;
       for (const ex of [hcx - 3, hcx + 2]) {
         if (eyes === 'shut') {
-          pxPut(g, ex, ey + 1, PX_EYE); pxPut(g, ex + 1, ey + 1, PX_EYE);
+          pxPut(g, ex, ey + low, PX_EYE); pxPut(g, ex + 1, ey + low, PX_EYE);
           continue;
         }
         // A pale face gets a tall dark eye with one highlight and a fleck of
@@ -148,27 +157,29 @@
         // middle was tried first and made every cat look half-asleep.
         const lit = darkFace ? PX_IRIS : PX_EYE;
         pxPut(g, ex, ey - 1, PX_HI); pxPut(g, ex + 1, ey - 1, lit);
-        pxPut(g, ex, ey, lit); pxPut(g, ex + 1, ey, lit);
-        pxPut(g, ex, ey + 1, lit); pxPut(g, ex + 1, ey + 1, darkFace ? PX_EYE : PX_IRIS);
+        if (!kit) { pxPut(g, ex, ey, lit); pxPut(g, ex + 1, ey, lit); }
+        pxPut(g, ex, ey + low, lit); pxPut(g, ex + 1, ey + low, darkFace ? PX_EYE : PX_IRIS);
         if (eyes === 'wide') { pxPut(g, ex, ey - 2, lit); pxPut(g, ex + 1, ey - 2, lit); }
       }
-      pxPut(g, hcx, ey + 3, PX_PINK);
-      pxPut(g, hcx - 1, ey + 4, PX_INK); pxPut(g, hcx + 1, ey + 4, PX_INK);
+      const ny = ey + (kit ? 2 : 3);
+      pxPut(g, hcx, ny, PX_PINK);
+      // No mouth on a kitten: on a head that small it merges with the outline.
+      if (!kit) { pxPut(g, hcx - 1, ny + 1, PX_INK); pxPut(g, hcx + 1, ny + 1, PX_INK); }
       // Blush in pink, never in the shade colour: dark cheeks read as dirt on
       // a pale cat.
-      pxPut(g, hcx - 4, ey + 3, PX_PINK); pxPut(g, hcx + 4, ey + 3, PX_PINK);
+      pxPut(g, hcx - (kit ? 3 : 4), ny, PX_PINK); pxPut(g, hcx + (kit ? 3 : 4), ny, PX_PINK);
     }
     return pxOutline(g);
   }
 
-  function catSprite(br, seated, front, eyes) {
-    const key = `${br.id}|${seated ? 's' : 'u'}|${front ? 'f' : 'b'}|${eyes}`;
+  function catSprite(br, seated, front, eyes, kit) {
+    const key = `${br.id}|${seated ? 's' : 'u'}|${front ? 'f' : 'b'}|${eyes}|${kit ? 'k' : 'a'}`;
     let cv = spriteCache.get(key);
     if (cv) return cv;
     cv = document.createElement('canvas');
     cv.width = PXW; cv.height = PXH;
     const c = cv.getContext('2d');
-    const g = catGrid(br, seated, front, eyes);
+    const g = catGrid(br, seated, front, eyes, kit);
     for (let y = 0; y < PXH; y++) for (let x = 0; x < PXW; x++) {
       const v = g[y][x];
       if (v === PX_T) continue;
@@ -267,7 +278,25 @@
     coffee: '☕', water: '💧', fridge: '🍎', sink: '🫧', stool: '💬', couch: '💬', beanbag: '🎧',
     window: '☁️', read: '📖', whiteboard: '✏️', meeting: '💬', arcade: '🎮', pingpong: '🏓', plant: '🌱',
     vending: '🥤', foosball: '⚽', phone: '📞',
+    lift: '🏋️', treadmill: '🏃', wheel: '🌀', yoga: '🧘', box: '📦', sun: '☀️',
   };
+
+  // ---- What the gym reads off a session ----------------------------------
+  const ctxPct = (s) => (s && s.context && s.context.used ? Math.min(1, s.context.used / (s.context.window || 200000)) : 0);
+  // Steps on a log scale: a quiet day and a heavy one are orders apart.
+  const tokTier = (s) => { const n = (s && s.today && s.today.tokens) || 0; return n >= 5e6 ? 5 : n >= 1e6 ? 4 : n >= 3e5 ? 3 : n >= 1e5 ? 2 : n > 0 ? 1 : 0; };
+  const turnTier = (s) => { const n = (s && s.today && s.today.turns) || 0; return n >= 60 ? 5 : n >= 30 ? 4 : n >= 15 ? 3 : n >= 6 ? 2 : n > 0 ? 1 : 0; };
+  const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n));
+  // The number a cat on a machine is showing, for the tag over its head.
+  function gymStat(act, s) {
+    if (act === 'lift' && s.context && s.context.used) {
+      const pct = ctxPct(s);
+      return { text: '🧠 ' + Math.round(pct * 100) + '%', color: pct >= 0.85 ? '#de4b40' : pct >= 0.6 ? '#e09412' : '#5f9a4c' };
+    }
+    if (act === 'treadmill' && s.today && s.today.tokens) return { text: '🔥 ' + fmtTok(s.today.tokens), color: '#3b8ee0' };
+    if (act === 'wheel' && s.today && s.today.turns) return { text: '↻ ' + s.today.turns, color: '#8b6be6' };
+    return null;
+  }
 
   function hash(str) {
     let h = 2166136261;
@@ -472,7 +501,9 @@
       const podRows = Math.ceil(pods / podCols);
       const OW = 1.3 + (podCols - 1) * 4.2 + 3.9; // open office width
       const OD = podRows * 4.7 + 0.8;             // open office depth (pods)
-      const D = Math.max(OD + 3.6, 14.5);
+      const GD = 3.3;                              // gym strip along the front
+      const D = Math.max(OD + 3.4 + GD, 14.5);
+      const gy = D - GD;
       const RW = 7.2;                              // right column width
       const W = OW + RW;
       const MR = 5.2;                              // meeting room depth
@@ -481,8 +512,10 @@
       const items = [];
       const pois = [];
       const desks = [];
-      // `live` marks furniture that animates; everything else is baked to a sprite.
-      const add = (depth, draw, live = false) => items.push({ depth, draw, live });
+      // `live` marks furniture that animates; everything else is baked to a
+      // sprite. It may be a function, for things that only move some of the
+      // time, and `state` names what a baked sprite depends on besides the room.
+      const add = (depth, draw, live = false, state = null) => items.push({ depth, draw, live, state });
       // Semantic list of what is where, for renderers that don't use the 2D
       // draw closures (the 3D view).
       const props = [];
@@ -538,6 +571,12 @@
         windows.push(x);
         poi(x + 0.75, 0.75, 'window', 'back');
       }
+      // A cushion in the light, in each gap between pods.
+      for (let c = 1; c < podCols; c++) {
+        const sx = 1.3 + c * 4.2 - 0.57, sy = 0.9;
+        add(sx + sy - 0.3, () => this.cushion(sx, sy));
+        poi(sx, sy, 'sun', 'front', { sit: 0.06, sleepy: true });
+      }
       poi(0.95, OD - 0.2, 'plant', 'back');
 
       // ---- ping-pong corner
@@ -551,7 +590,7 @@
 
       // ---- front corner: vending machines, foosball, phone booth
       const fy = OD + 3.7;
-      if (D - fy >= 3.4) {
+      if (gy - fy >= 1.7) {
         add(0.5 + fy + 0.4, () => this.vending(0.12, fy, '#c0392b'), true);
         prop('vending', { x: 0.12, y: fy, color: '#c0392b' });
         prop('vending', { x: 0.12, y: fy + 0.8, color: '#2f6fb0' });
@@ -560,7 +599,7 @@
         poi(1.3, fy + 0.4, 'vending', 'back');
         poi(1.3, fy + 1.2, 'vending', 'back');
       }
-      if (D - fy >= 2.2) {
+      if (gy - fy >= 1.5) {
         const fx = 3.0, fby = fy + 0.4;
         add(fx + 0.8 + fby + 0.4, () => this.foosball(fx, fby), true);
         prop('foosball', { x: fx, y: fby });
@@ -575,9 +614,50 @@
         solid(bx + 1.25, by - 0.05, 0.1, 1.4, 0.03);
         solid(bx + 0.85, by + 1.25, 0.5, 0.1, 0.03);
         poi(bx + 0.65, by + 0.6, 'phone', 'front', { sit: 0.45 });
-        add(OW - 0.45 + D - 0.6, () => this.plant(OW - 0.45, D - 0.6), true);
-        prop('plant', { x: OW - 0.45, y: D - 0.6 });
       }
+
+      // ---- gym along the front. What a cat does here is its own numbers:
+      // the bar carries its context, the belt and the wheel run at its day.
+      const dy = D - 1.2;
+      const gym = { x0: 3.7, x1: OW - 0.4, y0: gy + 0.2, y1: D - 0.2 };
+      const g0 = gym.x0 + 0.15 + Math.max(0, (gym.x1 - gym.x0 - 5.3) / 2);
+      const station = (x, y, act, opt) => { poi(x, y, act, 'front', opt); return pois[pois.length - 1]; };
+      {
+        const tx = g0 + 0.2, ty = gy + 0.5;
+        const q = station(tx + 0.35, ty + 0.85, 'treadmill', { z: 0.12 });
+        add(tx + 0.35 + ty + 0.6, () => this.treadmill(tx, ty, q), () => !!this.userOf(q));
+        solid(tx, ty, 0.7, 1.5, 0.05);
+      }
+      {
+        const cx = g0 + 2.25, wy = gy + 0.8;
+        const q = station(cx, wy + 0.18, 'wheel', { z: 0.14 });
+        add(cx + wy - 0.02, () => this.catWheel(cx, wy, q, false), () => !!this.userOf(q));
+        add(cx + wy + 0.6, () => this.catWheel(cx, wy, q, true));
+        solid(cx - 1.05, wy, 2.1, 0.36, 0.05);
+      }
+      {
+        const lx2 = g0 + 3.55, ly2 = gy + 0.45;
+        const q = station(lx2 + 0.7, ly2 + 0.8, 'lift', { z: 0.05 });
+        add(lx2 + 0.7 + ly2 + 0.1, () => this.liftRack(lx2, ly2, q), () => !!this.userOf(q));
+        solid(lx2 + 0.1, ly2, 1.2, 0.15, 0.03);
+      }
+      const mats = [
+        { x: g0 + 2.25, y: gy + 2.35, w: 1.3, d: 0.6, color: '#8b6be6' },
+        { x: g0 + 3.85, y: gy + 2.35, w: 1.3, d: 0.6, color: '#2fa39a' },
+      ];
+      for (const mt of mats) poi(mt.x + mt.w / 2, mt.y + mt.d / 2, 'yoga', 'front');
+      add(g0 + 0.7 + gy + 2.75, () => this.dumbbells(g0 + 0.05, gy + 2.5));
+      solid(g0 + 0.05, gy + 2.5, 1.0, 0.3, 0.04);
+
+      // ---- by the door: whoever is waiting for the user comes here to be
+      // seen. The one who has waited longest takes it out on the post.
+      const wait = {
+        x0: 0.95, x1: 3.3, y0: dy - 0.8, y1: dy + 1.0,
+        spots: [{ x: 1.4, y: dy - 1.45, act: 'scratch' }],
+      };
+      for (const yy of [dy + 0.5, dy - 0.35]) for (const xx of [1.45, 2.2, 2.95]) wait.spots.push({ x: xx, y: yy });
+      add(0.45 + dy - 1.35 + 0.1, () => this.scratchPost(0.45, dy - 1.35), false, () => this.scratch || 0);
+      solid(0.2, dy - 1.6, 0.5, 0.5, 0.03);
 
       // ---- meeting room behind glass, door at y 3.6–4.6
       const mx = OW;
@@ -663,18 +743,23 @@
       add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay), true);
       prop('arcade', { x: ax, y: ay });
       prop('plant', { x: W - 0.5, y: D - 0.5 });
-      prop('lamp', { x: lx - 0.2, y: D - 0.6 });
       prop('rug', { x: OW + 0.3, y: PY + 0.6, w: 4.0, d: D - PY - 1.0 });
       solid(ax, ay, 0.7, 0.7);
       poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
       add(W - 0.5 + D - 0.5, () => this.plant(W - 0.5, D - 0.5), true);
-      add(lx - 0.2 + D - 0.6, () => this.floorLamp(lx - 0.2, D - 0.6));
+
+      // A cardboard box, because the couch cost money and this is what they wanted.
+      const bx2 = OW + 4.9, by2 = D - 1.75;
+      add(bx2 + by2 + 0.2, () => this.cardboard(bx2, by2, false));
+      add(bx2 + by2 + 1.3, () => this.cardboard(bx2, by2, true));
+      solid(bx2, by2, 0.8, 0.7, 0.02);
+      poi(bx2 + 0.4, by2 + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
 
       const posters = [
         { y: 2.2, color: '#c96442', text: 'SHIP IT' },
         { y: 4.6, color: '#10a37f', text: 'TESTS ✓' },
       ];
-      return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, door: { x: 0.4, y: D - 1.2 } };
+      return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, gym, mats, wait, door: { x: 0.4, y: D - 1.2 } };
     }
 
     glassX(add, x, y, d) {
@@ -696,8 +781,28 @@
     // ------------------------------------------------------------ sessions → people
 
     update(sessions) {
-      const working = sessions.filter((s) => WORKING.has(s.status));
-      const off = sessions
+      // A subagent whose parent is on the floor comes along as its kitten
+      // instead of taking a desk of its own.
+      const byKey = new Map(sessions.map((s) => [s.key, s]));
+      const clock = Date.now();
+      const litters = new Map();
+      const grown = [];
+      for (const s of sessions) {
+        let par = s.subagent && s.parentId != null ? byKey.get(`${s.agent}:${s.parentId}`) : null;
+        // A subagent's subagent belongs to the same grown cat.
+        for (let hop = 0; par && par.subagent && hop < 4; hop++) {
+          const up = byKey.get(`${par.agent}:${par.parentId}`);
+          if (!up || up === par) break;
+          par = up;
+        }
+        if (!par || par === s) { grown.push(s); continue; }
+        // Around for its errand and a little after, then gone.
+        if (!WORKING.has(s.status) && clock - (s.lastEventAt || 0) > KITTEN_LINGER) continue;
+        if (!litters.has(par.key)) litters.set(par.key, []);
+        litters.get(par.key).push(s);
+      }
+      const working = grown.filter((s) => WORKING.has(s.status));
+      const off = grown
         .filter((s) => !WORKING.has(s.status))
         .sort((a, b) => (b.lastEventAt || 0) - (a.lastEventAt || 0));
       const wanderers = off.slice(0, MAX_WANDERERS);
@@ -708,7 +813,7 @@
       if (!this.plan.fixed && (working.length > cap - 1 || (cap > 8 && working.length < cap * 0.35))) {
         this.plan = this.buildPlan(working.length);
         this.deskOf.clear();
-        for (const p of this.people.values()) { p.poi = null; p.napDesk = null; p.desk = null; p.until = 0; }
+        for (const p of this.people.values()) { p.poi = null; p.napDesk = null; p.desk = null; p.until = 0; p.spot = null; p.followAt = null; }
       }
 
       const workKeys = new Set(working.map((s) => s.key));
@@ -726,6 +831,14 @@
       }
       const takenDesks = new Set([...this.deskOf.values()].map((i) => desks[i]));
 
+      // Whoever is waiting for the user queues at the door, longest wait
+      // first, so one look at the door says how many and for how long.
+      const spots = this.plan.wait.spots;
+      const queue = working.filter((s) => s.status === 'waiting' && this.deskOf.has(s.key))
+        .sort((a, b) => (a.lastEventAt || 0) - (b.lastEventAt || 0)).slice(0, spots.length);
+      const spotOf = new Map(queue.map((s, i) => [s.key, spots[i]]));
+      this.scratch = queue.length ? Math.min(5, 1 + Math.floor(Math.max(0, clock - (queue[0].lastEventAt || clock)) / 120000)) : 0;
+
       const shown = new Set();
       for (const s of [...working, ...wanderers]) {
         const isWorker = this.deskOf.has(s.key);
@@ -738,13 +851,43 @@
         if (isWorker) {
           this.release(p);
           const desk = desks[this.deskOf.get(s.key)];
-          if (p.desk !== desk || p.mode !== 'work') { p.desk = desk; this.goTo(p, desk.seat); }
-          p.mode = 'work';
+          const spot = spotOf.get(s.key);
+          if (spot) {
+            // The desk stays theirs; they have got up to come and find you.
+            if (p.mode !== 'door' || p.spot !== spot) { p.spot = spot; this.goTo(p, spot); }
+            p.desk = desk;
+            p.mode = 'door';
+          } else {
+            if (p.desk !== desk || p.mode !== 'work') { p.desk = desk; this.goTo(p, desk.seat); }
+            p.mode = 'work';
+            p.spot = null;
+          }
         } else {
           if (p.mode !== 'wander') { p.mode = 'wander'; p.desk = null; p.poi = null; p.until = 0; }
           // Someone started working at the desk this one was napping on.
           if (p.napDesk && takenDesks.has(p.napDesk)) { this.release(p); p.path = []; }
         }
+      }
+      for (const [pk, kits] of litters) {
+        const par = this.people.get(pk);
+        if (!par || !shown.has(pk)) continue;
+        kits.sort((a, b) => WORKING.has(b.status) - WORKING.has(a.status) || (b.lastEventAt || 0) - (a.lastEventAt || 0));
+        const keep = kits.slice(0, MAX_KITTENS).sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || (a.key < b.key ? -1 : 1));
+        keep.forEach((s, slot) => {
+          shown.add(s.key);
+          let p = this.people.get(s.key);
+          if (!p) {
+            // Born at the parent's side, in the parent's coat.
+            p = this.newPerson(s);
+            p.x = par.x; p.y = par.y; p.placeOnArrive = false; p.breed = par.breed;
+            this.people.set(s.key, p);
+          }
+          p.s = s;
+          p.leaving = false;
+          if (p.mode !== 'follow') { this.release(p); p.desk = null; p.mode = 'follow'; p.followAt = null; }
+          p.parent = par;
+          p.slot = slot;
+        });
       }
       for (const [k, p] of this.people) {
         if (!shown.has(k) && !p.leaving) {
@@ -788,6 +931,32 @@
       p.path = this.plan.grid.path(p.x, p.y, target.x, target.y);
     }
 
+    // A kitten keeps to its parent: a place beside wherever the parent is
+    // headed, so it sets off when the parent does instead of trailing a step
+    // behind it.
+    follow(p) {
+      const par = p.parent;
+      if (!par || !this.people.has(par.key)) return;
+      const dest = par.path.length ? par.path[par.path.length - 1] : par;
+      const at = p.followAt;
+      if (at && at.slot === p.slot && Math.hypot(at.x - dest.x, at.y - dest.y) < 0.3) return;
+      const grid = this.plan.grid;
+      const ring = [[0.62, 0.3], [-0.62, 0.3], [0.92, -0.15], [-0.92, -0.15], [0.3, 0.78], [-0.34, 0.78], [0.5, -0.62], [-0.5, -0.62], [0, 1.05], [0, -0.8]];
+      const others = [...this.people.values()].filter((o) => o !== p && o.mode === 'follow' && o.parent === par && o.followTo);
+      let spot = null;
+      for (let k = 0; k < ring.length && !spot; k++) {
+        const [ox, oy] = ring[(p.slot + k) % ring.length];
+        const x = dest.x + ox, y = dest.y + oy;
+        if (grid.blocked(x, y)) continue;
+        if (others.some((o) => Math.hypot(o.followTo.x - x, o.followTo.y - y) < 0.3)) continue;
+        spot = { x, y };
+      }
+      spot = spot || { x: dest.x + 0.2, y: dest.y + 0.35 };
+      p.followAt = { x: dest.x, y: dest.y, slot: p.slot };
+      p.followTo = spot;
+      this.goTo(p, spot);
+    }
+
     wander(p, now) {
       if (p.path.length) return;
       if (p.poi && now < p.until) return;
@@ -801,6 +970,13 @@
         let w = 1;
         if (q.pair) w = plan.pois.some((o) => o.pair === q.pair && o !== q && o.taken) ? 7 : 1.2;
         if (q.act === 'couch' || q.act === 'beanbag' || q.sleepy) w = sleepy ? 3 : 1.4;
+        // The gym is a gauge, so the cats with most to show get it first.
+        if (q.act === 'lift') w = 0.8 + 4 * ctxPct(p.s);
+        if (q.act === 'treadmill') w = 0.8 + 0.4 * tokTier(p.s);
+        if (q.act === 'wheel') w = 0.8 + 0.4 * turnTier(p.s);
+        if (q.act === 'yoga') w = sleepy ? 2.5 : 1.2;
+        // A cat that has just finished goes and lies in the sun.
+        if (q.act === 'sun') w = p.s.status === 'done' ? 4 : sleepy ? 2 : 1;
         weighted.push([q, w]);
       }
       for (const d of plan.noNap ? [] : plan.desks) {
@@ -815,7 +991,9 @@
       choice.taken = p.key;
       p.poi = choice;
       p.until = Infinity; // set on arrival
-      p.stay = (choice.act === 'nap' ? rand(25, 60) : choice.act === 'pingpong' ? rand(15, 30) : rand(8, 20)) * 1000;
+      const long = choice.act === 'nap' || choice.act === 'sun' || choice.act === 'box';
+      const mid = ['pingpong', 'lift', 'treadmill', 'wheel', 'yoga'].includes(choice.act);
+      p.stay = (long ? rand(25, 60) : mid ? rand(15, 30) : rand(8, 20)) * 1000;
       this.goTo(p, choice);
     }
 
@@ -1021,8 +1199,8 @@
     // thousand fills, and that - not the enlargement it was blamed on - was
     // the whole frame budget.
     drawItem(it) {
-      if (it.live) { it.draw(); return; }
-      const key = this.bgKey + '|' + (skyColor().night ? 'n' : 'd');
+      if (typeof it.live === 'function' ? it.live() : it.live) { it.draw(); return; }
+      const key = this.bgKey + '|' + (skyColor().night ? 'n' : 'd') + (it.state ? '|' + it.state() : '');
       if (it.bakedFor !== key) {
         // A few per frame: baking the room in one go would stall the first one.
         if (this.bakedThisFrame >= 4) { it.draw(); return; }
@@ -1247,6 +1425,45 @@
       }
       this.poly([P(pp.x0 - 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y - 1.4), P(pp.x1 + 0.6, pp.y + 1.3), P(pp.x0 - 0.6, pp.y + 1.3)], pal.mat);
       this.poly([P(pp.x0 - 0.5, pp.y - 1.3), P(pp.x1 + 0.5, pp.y - 1.3), P(pp.x1 + 0.5, pp.y + 1.2), P(pp.x0 - 0.5, pp.y + 1.2)], null, this.tint(pal.mat, pal.dark ? 14 : -14));
+
+      // Gym floor: rubber tiles with a fleck, seams a tile apart.
+      {
+        const { x0, x1, y0, y1 } = this.plan.gym;
+        const base = pal.dark ? '#2c333b' : '#8f9aa8';
+        const lt = this.tint(base, 12), dk = this.tint(base, -14);
+        this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], base);
+        let i = 0;
+        for (let y = y0 + STEP / 2; y < y1; y += STEP, i++) {
+          let j = 0;
+          for (let x = x0 + STEP / 2; x < x1; x += STEP, j++) {
+            const k = (i * 5 + j * 11) % 23;
+            if (k === 0) dot(P(x, y), lt); else if (k === 12) dot(P(x, y), dk);
+          }
+        }
+        for (let x = x0 + 1; x < x1 - 0.2; x += 1) this.seg(P(x, y0), P(x, y1), dk);
+        for (let y = y0 + 1; y < y1 - 0.2; y += 1) this.seg(P(x0, y), P(x1, y), dk);
+        this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], null, this.tint(base, pal.dark ? 24 : -30));
+        // Yoga mats lie flat, so they are part of the floor.
+        for (const mt of this.plan.mats) {
+          this.poly([P(mt.x, mt.y), P(mt.x + mt.w, mt.y), P(mt.x + mt.w, mt.y + mt.d), P(mt.x, mt.y + mt.d)], mt.color, this.tint(mt.color, -40));
+          this.seg(P(mt.x + 0.08, mt.y + 0.1), P(mt.x + mt.w - 0.08, mt.y + 0.1), this.tint(mt.color, 22));
+          this.seg(P(mt.x + 0.08, mt.y + mt.d - 0.12), P(mt.x + mt.w - 0.08, mt.y + mt.d - 0.12), this.tint(mt.color, -18));
+        }
+      }
+      // The waiting mat by the door, in the colour "waiting" has everywhere else.
+      {
+        const { x0, x1, y0, y1, spots } = this.plan.wait;
+        const base = pal.dark ? '#5c4a22' : '#f3d99b', rim = pal.dark ? '#8a6a20' : '#e0a83a';
+        this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], rim);
+        this.poly([P(x0 + 0.12, y0 + 0.12), P(x1 - 0.12, y0 + 0.12), P(x1 - 0.12, y1 - 0.12), P(x0 + 0.12, y1 - 0.12)], base);
+        // a paw print where each one stands
+        const ink = this.tint(base, pal.dark ? 30 : -34);
+        for (const sp of spots.slice(1)) {
+          const q = P(sp.x, sp.y);
+          dot(q, ink, 0, 0); dot(q, ink, 1, 0); dot(q, ink, 0, 1); dot(q, ink, 1, 1); dot(q, ink, -1, 0); dot(q, ink, 2, 0);
+          dot(q, ink, -2, -2); dot(q, ink, 0, -3); dot(q, ink, 1, -3); dot(q, ink, 3, -2);
+        }
+      }
 
       // Where floor meets wall the light does not reach: two soft bands.
       for (const [d0, d1, a] of [[0, 0.16, 0.2], [0.16, 0.38, 0.09]]) {
@@ -1610,6 +1827,171 @@
       }
     }
 
+    // ---------------------------------------------------------------- gym
+
+    // Whoever is on a piece of equipment, once they have arrived.
+    userOf(q) {
+      const p = q && q.taken && this.people.get(q.taken);
+      return p && p.poi === q && !p.path.length ? p : null;
+    }
+
+    treadmill(x, y, q) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const p = this.userOf(q);
+      const body = this.pal.dark ? '#3b4048' : '#5b626d';
+      const lite = this.tint(body, 26), mid = this.tint(body, 10), low = this.tint(body, -18);
+      this.box(x, y, 0, 0.7, 1.5, 0.12, '#24272c', mid, low);
+      // The belt only moves under someone, and as fast as their day has been.
+      const run = p ? ((this.t / 1000) * (0.5 + tokTier(p.s) * 0.45)) % 0.3 : 0.1;
+      for (let v = y + 0.08 + run; v < y + 1.42; v += 0.3) this.seg(P(x + 0.08, v, 0.12), P(x + 0.62, v, 0.12), '#444a53');
+      this.seg(P(x + 0.04, y + 0.04, 0.12), P(x + 0.04, y + 1.46, 0.12), mid);
+      this.seg(P(x + 0.66, y + 0.04, 0.12), P(x + 0.66, y + 1.46, 0.12), mid);
+      // Console at the back on two posts: one lamp per step of today's tokens.
+      this.box(x + 0.02, y, 0.12, 0.06, 0.06, 0.9, lite, mid, low);
+      this.box(x + 0.62, y, 0.12, 0.06, 0.06, 0.9, lite, mid, low);
+      this.box(x, y - 0.02, 0.95, 0.7, 0.1, 0.3, lite, '#1d2024', low);
+      const lit = p ? tokTier(p.s) : 0;
+      for (let i = 0; i < 5; i++) {
+        this.art(P(x + 0.1 + i * 0.125, y + 0.08, 1.14), (c) => {
+          c.fillStyle = i < lit ? (i > 2 ? '#ff6a4d' : '#7be08a') : '#3d434b';
+          c.fillRect(0, 0, 1, 2);
+        });
+      }
+      this.box(x - 0.02, y + 0.06, 0.8, 0.05, 0.6, 0.05, lite, mid, low);
+      this.box(x + 0.67, y + 0.06, 0.8, 0.05, 0.6, 0.05, lite, mid, low);
+    }
+
+    // A cat wheel: a wooden drum on a stand. It comes in two halves so the
+    // runner is drawn between the back of the drum and its front rim.
+    catWheel(cx, y, q, front) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const R = 1.05, zc = R + 0.12, TK = 0.36, N = 24;
+      const wood = this.pal.dark ? '#a8834f' : '#d9b47a';
+      const edge = this.tint(wood, -60);
+      const at = (a, yy, r = R) => P(cx + Math.cos(a) * r, yy, zc + Math.sin(a) * r);
+      const ring = (yy, r) => Array.from({ length: N }, (_, i) => at((i / N) * Math.PI * 2, yy, r));
+      if (front) {
+        const o = ring(y + TK, R), n = ring(y + TK, R - 0.1);
+        for (let i = 0; i < N; i++) { const j = (i + 1) % N; this.poly([o[i], o[j], n[j], n[i]], this.tint(wood, 18)); }
+        this.poly(o, null, edge);
+        this.poly(n, null, edge);
+        return;
+      }
+      const p = this.userOf(q);
+      // It turns as fast as the runner has had turns today.
+      const spin = p ? (this.t / 1000) * (1.2 + turnTier(p.s) * 0.9) : 0;
+      this.box(cx - 1.0, y + 0.06, 0, 2.0, 0.24, 0.1, this.tint(wood, -18), this.tint(wood, -32), this.tint(wood, -44));
+      this.poly(ring(y, R), this.tint(wood, -34), edge);
+      for (let i = 0; i < N; i++) {
+        const a0 = spin + (i / N) * Math.PI * 2, a1 = spin + ((i + 1) / N) * Math.PI * 2;
+        this.poly([at(a0, y), at(a1, y), at(a1, y + TK), at(a0, y + TK)], i % 2 ? wood : this.tint(wood, -13));
+      }
+      this.poly(ring(y, R), null, edge);
+    }
+
+    liftRack(x, y, q) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const p = this.userOf(q);
+      const rub = this.pal.dark ? '#262a30' : '#444b54';
+      const steel = this.pal.metal;
+      const sl = this.tint(steel, 22), sd = this.tint(steel, -24);
+      // platform: rubber with a strip of wood down the middle
+      this.box(x, y + 0.3, 0, 1.4, 1.0, 0.05, rub, this.tint(rub, -8), this.tint(rub, -18));
+      this.poly([P(x + 0.35, y + 0.3, 0.05), P(x + 1.05, y + 0.3, 0.05), P(x + 1.05, y + 1.3, 0.05), P(x + 0.35, y + 1.3, 0.05)], this.pal.deskTop);
+      // rack behind it, spare plates on a rail
+      this.box(x + 0.12, y, 0, 0.08, 0.08, 1.2, sl, steel, sd);
+      this.box(x + 1.2, y, 0, 0.08, 0.08, 1.2, sl, steel, sd);
+      this.box(x + 0.12, y + 0.02, 1.12, 1.16, 0.04, 0.06, sl, steel, sd);
+      this.box(x + 0.12, y + 0.02, 0.42, 1.16, 0.04, 0.05, sl, steel, sd);
+      ['#5f9a4c', '#3b8ee0', '#e0a83a', '#de4b40'].forEach((col, i) => {
+        this.art(P(x + 0.34 + i * 0.25, y + 0.08, 0.66), (c) => {
+          const r = 2 + (i > 1 ? 1 : 0);
+          pxDisc(c, 0, 0, r + 1, r + 1, INK_HEX);
+          pxDisc(c, 0, 0, r, r, col);
+          c.fillStyle = '#c9ced6'; c.fillRect(0, 0, 1, 1);
+        });
+      });
+      // The bar waits on the platform until someone picks it up.
+      if (!p) {
+        const a = P(x + 0.15, y + 0.85, 0.16), b = P(x + 1.25, y + 0.85, 0.16);
+        this.seg(a, b, INK_HEX, 0, -1); this.seg(a, b, INK_HEX, 0, 1); this.seg(a, b, '#c9ced6');
+        for (const e of [a, b]) this.art(e, (c) => { pxDisc(c, 0, 0, 3, 4, INK_HEX); pxDisc(c, 0, 0, 2, 3, '#5f9a4c'); });
+      }
+    }
+
+    dumbbells(x, y) {
+      const st = this.pal.dark ? '#30353c' : '#4a515b';
+      this.box(x, y, 0, 1.0, 0.3, 0.28, this.tint(st, 22), st, this.tint(st, -16));
+      ['#5f9a4c', '#3b8ee0', '#de4b40'].forEach((col, i) => {
+        this.art(this.iso(x + 0.2 + i * 0.3, y + 0.15, 0.28), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-3, -3, 7, 4);
+          c.fillStyle = col; c.fillRect(-2, -2, 2, 2); c.fillRect(1, -2, 2, 2);
+          c.fillStyle = '#c9ced6'; c.fillRect(0, -1, 1, 1);
+        });
+      });
+    }
+
+    // ---------------------------------------------------------- cat things
+
+    scratchPost(x, y) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const rope = this.pal.dark ? '#a58d62' : '#d9c08f';
+      const wood = this.pal.deskL;
+      this.box(x - 0.28, y - 0.28, 0, 0.56, 0.56, 0.06, this.tint(wood, 14), wood, this.tint(wood, -14));
+      this.box(x - 0.09, y - 0.09, 0.06, 0.18, 0.18, 1.05, this.tint(rope, 12), rope, this.tint(rope, -16));
+      for (let z = 0.16; z < 1.08; z += 0.12) {
+        this.seg(P(x - 0.09, y + 0.09, z), P(x + 0.09, y + 0.09, z), this.tint(rope, -24));
+        this.seg(P(x + 0.09, y - 0.09, z), P(x + 0.09, y + 0.09, z), this.tint(rope, -36));
+      }
+      this.box(x - 0.22, y - 0.22, 1.11, 0.44, 0.44, 0.06, this.tint(wood, 14), wood, this.tint(wood, -14));
+      // The longer someone has been kept waiting, the more of it is shredded.
+      const n = this.scratch || 0;
+      if (n) this.art(P(x, y + 0.09, 0.98), (c) => {
+        c.fillStyle = this.tint(rope, -78);
+        for (let i = 0; i < n; i++) {
+          const yy = i * 3, dx = i % 2;
+          c.fillRect(-2 + dx, yy, 1, 1); c.fillRect(-1 + dx, yy + 1, 1, 1); c.fillRect(dx, yy + 2, 1, 1);
+        }
+      });
+    }
+
+    // Open box in two halves, like the wheel: whoever is in it sits between
+    // the inside and the front.
+    cardboard(x, y, front) {
+      const P = (a, b, c) => this.iso(a, b, c);
+      const w = 0.8, d = 0.7, h = 0.42;
+      const card = this.pal.dark ? '#a8854f' : '#cfa76e';
+      if (!front) {
+        this.poly([P(x, y), P(x + w, y), P(x + w, y + d), P(x, y + d)], this.tint(card, -52));
+        this.poly([P(x, y, 0), P(x + w, y, 0), P(x + w, y, h), P(x, y, h)], this.tint(card, -26));
+        this.poly([P(x, y, 0), P(x, y + d, 0), P(x, y + d, h), P(x, y, h)], this.tint(card, -38));
+        this.poly([P(x, y, h), P(x + w, y, h), P(x + w, y - 0.2, h + 0.12), P(x, y - 0.2, h + 0.12)], this.tint(card, -8), this.tint(card, -60));
+        this.poly([P(x, y, h), P(x, y + d, h), P(x - 0.2, y + d, h + 0.12), P(x - 0.2, y, h + 0.12)], this.tint(card, -18), this.tint(card, -60));
+        return;
+      }
+      this.poly([P(x, y + d, 0), P(x + w, y + d, 0), P(x + w, y + d, h), P(x, y + d, h)], card);
+      this.poly([P(x + w, y, 0), P(x + w, y + d, 0), P(x + w, y + d, h), P(x + w, y, h)], this.tint(card, -15));
+      this.poly([P(x + w * 0.42, y + d, 0), P(x + w * 0.58, y + d, 0), P(x + w * 0.58, y + d, h), P(x + w * 0.42, y + d, h)], this.tint(card, 26));
+      this.seg(P(x, y + d, h), P(x + w, y + d, h), this.tint(card, 24));
+      this.seg(P(x + w, y, h), P(x + w, y + d, h), this.tint(card, 8));
+      this.seg(P(x, y + d, 0), P(x + w, y + d, 0), this.tint(card, -40));
+      this.seg(P(x + w, y, 0), P(x + w, y + d, 0), this.tint(card, -48));
+      this.art(P(x + w * 0.2, y + d, h * 0.5), (c) => {
+        c.fillStyle = this.tint(card, -60);
+        c.fillRect(0, 0, 2, 2); c.fillRect(-1, -2, 1, 1); c.fillRect(1, -3, 1, 1); c.fillRect(3, -2, 1, 1);
+      });
+    }
+
+    cushion(x, y) {
+      const pal5 = this.rampOf(this.pal.dark ? '#a8733c' : '#eab676');
+      const edge = this.tint(pal5[2], -70);
+      this.art(this.iso(x, y, 0), (c) => {
+        pxLump(c, 0, -2, 9, 4, pal5, edge);
+        c.fillStyle = pal5[1];
+        c.fillRect(-3, -2, 6, 1);
+      });
+    }
+
     booth(add, x, y) {
       const P = (a, b, c) => this.iso(a, b, c);
       const pal = this.pal;
@@ -1782,9 +2164,14 @@
         if (p.desk.pose === 'stand') return { pose: 'stand', face, act: 'station', sitZ: 0 };
         return { pose: 'sit', face, act: s.status === 'tool' || s.status === 'typing' ? 'type' : 'think', sitZ: 0.34 };
       }
+      if (p.mode === 'door' && p.spot) return { pose: 'stand', face: 'front', act: p.spot.act || 'wave', sitZ: 0 };
+      if (p.mode === 'follow') {
+        if (s.status === 'waiting' || s.status === 'error') return { pose: 'stand', face: 'front', act: 'wave', sitZ: 0 };
+        return { pose: 'sit', face: 'front', act: WORKING.has(s.status) ? 'yarn' : 'nap', sitZ: 0 };
+      }
       if (p.mode === 'wander' && p.poi) {
         const q = p.poi;
-        return { pose: q.sit ? 'sit' : 'stand', face: q.face === 'side' ? 'front' : q.face, act: q.act, sitZ: q.sit || 0 };
+        return { pose: q.sit ? 'sit' : 'stand', face: q.face === 'side' ? 'front' : q.face, act: q.act, sitZ: q.sit || q.z || 0 };
       }
       return { pose: 'stand', face: 'front', act: null, sitZ: 0 };
     }
@@ -1799,13 +2186,17 @@
       const seated = st.pose === 'sit';
       const front = st.face !== 'back';
       const b = this.iso(p.x, p.y, st.sitZ);
-      const step = moving ? Math.sin(t * 12 + p.phase) : 0;
-      const bob = moving ? Math.abs(step) * 1.5 : 0;
+      const kit = !!s.subagent;
+      // On the belt or in the wheel a cat runs on the spot, at its own pace.
+      const running = !moving && (st.act === 'treadmill' || st.act === 'wheel');
+      const pace = 7 + (st.act === 'treadmill' ? tokTier(s) : turnTier(s)) * 2.5;
+      const step = moving ? Math.sin(t * 12 + p.phase) : running ? Math.sin(t * pace + p.phase) : 0;
+      const bob = moving || running ? Math.abs(step) * 1.5 : 0;
 
       const fb = this.iso(p.x, p.y, 0);
       this.art(fb, (g) => {
-        pxDisc(g, 0, 0, 6, 2, this.pal.shadow);
-        if (this.hoverKey === p.key) pxRing(g, 0, 0, 9, 4, STATUS_COLOR[s.status] || '#888');
+        pxDisc(g, 0, 0, kit ? 4 : 6, kit ? 1 : 2, this.pal.shadow);
+        if (this.hoverKey === p.key) pxRing(g, 0, 0, kit ? 6 : 9, kit ? 3 : 4, STATUS_COLOR[s.status] || '#888');
       });
 
       let x = b.x;
@@ -1830,12 +2221,14 @@
       // Tail: a few blocks along a curve, so it can still swing. Drawn before
       // the body so it sits behind it.
       {
-        const sway = Math.sin(t * (moving ? 6 : 1.6) + p.phase) * (moving ? 1.6 : 0.8);
-        const root = seated ? -3 : -5;
-        for (let i = 0; i < 4; i++) {
-          const k = i / 3;
-          const tx = pxFloor(4 + k * 4 + sway * k);
-          const ty = pxFloor(root - k * 7);
+        const lively = moving || running;
+        const sway = Math.sin(t * (lively ? 6 : 1.6) + p.phase) * (lively ? 1.6 : 0.8);
+        const root = kit ? -2 : seated ? -3 : -5;
+        const tn = kit ? 3 : 4;
+        for (let i = 0; i < tn; i++) {
+          const k = i / (tn - 1);
+          const tx = pxFloor((kit ? 3 : 4) + k * (kit ? 2.5 : 4) + sway * k);
+          const ty = pxFloor(root - k * (kit ? 4 : 7));
           c.fillStyle = INK; c.fillRect(tx - 1, ty - 1, 4, 4);
           c.fillStyle = i > 1 ? br.belly : fur; c.fillRect(tx, ty, 2, 2);
         }
@@ -1844,8 +2237,10 @@
       const sleepy = s.status === 'idle';
       const napping = st.act === 'nap';
       const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
-      const eyes = (blink || sleepy || napping) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
-      const sprite = catSprite(br, seated, front, eyes);
+      // Basking shuts the eyes, and so does a bar that is nearly too heavy.
+      const strain = st.act === 'lift' && ctxPct(s) >= 0.85;
+      const eyes = (blink || sleepy || napping || strain || st.act === 'sun') ? 'shut' : s.status === 'error' ? 'wide' : 'open';
+      const sprite = catSprite(br, seated, front, eyes, kit);
       c.imageSmoothingEnabled = false;
       c.drawImage(sprite, -PXC, -PXH + 1);
 
@@ -1862,7 +2257,7 @@
       };
       const sip = Math.sin(t * 0.9 + p.phase) > 0.6;
       const top = -PXH + 13;
-      switch (st.act) {
+      switch (kit ? 'kit:' + st.act : st.act) {
         case 'wave': {
           const wave = Math.sin(t * 8 + p.phase) > 0 ? 0 : 2;
           paw(6, top - 4 - wave);
@@ -1911,13 +2306,72 @@
           prop(6, top - 6, 2, 5, '#2a2a30');
           break;
         }
+        case 'lift': {
+          // The plates are the session's context: more of it, more of them,
+          // green through to red. Near the limit the bar stalls at the chin
+          // and trembles, which is the thing worth noticing from across the room.
+          const pct = ctxPct(s);
+          const n = !(s.context && s.context.used) ? 0 : pct >= 0.75 ? 4 : pct >= 0.5 ? 3 : pct >= 0.25 ? 2 : 1;
+          const heavy = pct >= 0.85;
+          const cyc = ((t * (heavy ? 0.45 : 0.75 - n * 0.08) + p.phase) % 1 + 1) % 1;
+          const up = cyc < 0.3 ? cyc / 0.3 : cyc < 0.55 ? 1 : cyc < 0.8 ? 1 - (cyc - 0.55) / 0.25 : 0;
+          const rise = heavy ? Math.min(up, 0.1 + 0.05 * Math.sin(t * 3)) : up;
+          const shake = heavy && up > 0.1 && Math.sin(t * 45) > 0 ? 1 : 0;
+          const by = pxFloor(top + 3 - rise * 17);
+          const half2 = 9 + n * 3;
+          c.fillStyle = INK; c.fillRect(-half2 - 1 + shake, by - 1, half2 * 2 + 3, 3);
+          c.fillStyle = '#c9ced6'; c.fillRect(-half2 + shake, by, half2 * 2 + 1, 1);
+          const col = ['#5f9a4c', '#3b8ee0', '#e0a83a', '#de4b40'][Math.max(0, n - 1)];
+          for (let k = 0; k < n; k++) for (const sgn of [-1, 1]) {
+            // biggest plate inside, as on a real bar
+            const ph = Math.max(2, 1 + n - Math.floor(k / 2));
+            const px0 = (sgn > 0 ? 9 + k * 3 : -10 - k * 3) + shake;
+            c.fillStyle = INK; c.fillRect(px0 - 1, by - ph - 1, 4, ph * 2 + 3);
+            c.fillStyle = col; c.fillRect(px0, by - ph, 2, ph * 2 + 1);
+            c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(px0, by - ph, 1, ph * 2 + 1);
+          }
+          paw(-7 + shake, by + 1); paw(5 + shake, by + 1);
+          if (heavy && Math.sin(t * 6) > 0) { c.fillStyle = '#7fc4ff'; c.fillRect(8, -PXH + 3, 1, 2); c.fillRect(-9, -PXH + 5, 1, 2); }
+          break;
+        }
+        case 'treadmill':
+        case 'wheel': {
+          const k = step > 0 ? 1 : 0;
+          paw(-5, -2 - k * 2); paw(3, -2 - (1 - k) * 2);
+          break;
+        }
+        case 'yoga': {
+          // paws out, then paws up, slowly
+          const up = Math.sin(t * 1.1 + p.phase) > 0;
+          if (up) { paw(-8, top - 9); paw(6, top - 9); } else { paw(-10, top - 1); paw(8, top - 1); }
+          break;
+        }
+        case 'scratch': {
+          const k = Math.sin(t * 9 + p.phase) > 0 ? 0 : 3;
+          paw(-12, top - 5 + k); paw(-10, top - 2 - k);
+          break;
+        }
+        case 'kit:yarn': {
+          const k = Math.sin(t * 5 + p.phase) > 0 ? 0 : 1;
+          const bx = 7 + k;
+          c.fillStyle = INK; c.fillRect(bx - 1, -5, 5, 5);
+          c.fillStyle = pick(this.pal.book, p.h, 9); c.fillRect(bx, -4, 3, 3);
+          c.fillStyle = 'rgba(255,255,255,.6)'; c.fillRect(bx, -4, 1, 1);
+          paw(3 + k, -4);
+          break;
+        }
+        case 'kit:wave': {
+          const w = Math.sin(t * 8 + p.phase) > 0 ? 0 : 2;
+          paw(5, -10 - w);
+          break;
+        }
         default: break;
       }
       c.restore();
 
       // Back in world units for the name tag and the click target.
-      const headTop = y - (PXH + 1) * ART;
-      const half = (PXC + 1) * ART;
+      const headTop = y - ((kit ? 14 : PXH) + 1) * ART;
+      const half = (kit ? 7 : PXC + 1) * ART;
       this.hit.push({ key: p.key, x0: x - half, x1: x + half, y0: headTop - 4, y1: fb.y + 4 });
       return { x, y: headTop + 6, act: st.act };
     }
@@ -1951,8 +2405,16 @@
         return yy - 8;
       };
 
+      if (p.mode === 'follow' && this.hoverKey !== p.key) {
+        // A kitten says what it is doing with one dot; the rest is on hover.
+        c.fillStyle = STATUS_COLOR[st] || '#888';
+        c.beginPath(); c.arc(x, y - 2, 3, 0, Math.PI * 2); c.fill();
+        c.restore();
+        return;
+      }
+
       let top = y;
-      if (p.mode === 'work' && !p.path.length) {
+      if ((p.mode === 'work' || p.mode === 'door') && !p.path.length) {
         const col = STATUS_COLOR[st] || '#888';
         if (st === 'thinking') {
           c.fillStyle = pal.bubble;
@@ -1989,7 +2451,10 @@
       } else if (p.mode === 'wander') {
         const justDone = st === 'done' && Date.now() - (s.lastEventAt || 0) < 3 * 60_000;
         const dozing = at.act === 'nap' || (st === 'idle' && (at.act === 'couch' || at.act === 'beanbag' || (p.poi && p.poi.sleepy)));
-        if (justDone) {
+        const stat = p.path.length ? null : gymStat(at.act, s);
+        if (stat) {
+          top = pill(stat.text, '#fff', stat.color, y - 12);
+        } else if (justDone) {
           c.fillStyle = STATUS_COLOR.done;
           c.beginPath(); c.arc(x, y - 10, 7, 0, Math.PI * 2); c.fill();
           c.fillStyle = '#fff'; c.font = font(800, 9); c.fillText('✓', x, y - 9.5); c.font = font(600, 10);
@@ -2020,7 +2485,7 @@
 
       const hover = this.hoverKey === p.key;
       if (!s.subagent || hover) {
-        pill(this.label(s), pal.text, pal.tagBg, top - 11, p.mode === 'work' || hover ? 1 : 0.7, true);
+        pill(this.label(s), pal.text, pal.tagBg, top - 11, p.mode === 'work' || p.mode === 'door' || hover ? 1 : 0.7, true);
       } else if (badge) {
         this.agentBadge(badge, x, top - 11);
       }
@@ -2132,6 +2597,7 @@
     step(dt) {
       const wall = Date.now();
       for (const [k, p] of this.people) {
+        if (p.mode === 'follow') this.follow(p);
         if (p.mode === 'wander') {
           if (p.poi && !p.path.length && p.until === Infinity) p.until = wall + p.stay;
           this.wander(p, wall);

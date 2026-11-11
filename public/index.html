@@ -721,7 +721,13 @@ function render() {
   // The office decides who sits at a desk and who wanders around.
   // With sessions hand-picked, only those become staff; with none picked the
   // office fills itself from everything in the window, as it always did.
-  const officeList = state.picked.length ? all.filter((s) => state.picked.includes(s.key)) : all;
+  const staff = state.picked.length ? all.filter((s) => state.picked.includes(s.key)) : all;
+  // Subagents come along as their parent's kittens, whether or not the cards
+  // list shows subagents and whether or not anyone picked them.
+  const staffKeys = new Set(staff.map((s) => s.key));
+  const kittens = state.data.sessions.filter((s) =>
+    s.subagent && s.parentId != null && !staffKeys.has(s.key) && staffKeys.has(`${s.agent}:${s.parentId}`));
+  const officeList = kittens.length ? staff.concat(kittens) : staff;
   const poppedOut = !!popout?.win;
   // Wait for the first snapshot so people start at their places instead of
   // all walking in through the door.
