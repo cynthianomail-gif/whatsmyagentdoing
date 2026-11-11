@@ -3,16 +3,23 @@
 // Jumping from a person in the office to that conversation in the Claude
 // desktop app.
 //
-// The app opens a conversation from `claude://code/continue?session=local_...`,
-// but nothing on disk ties its `local_` session id to the CLI transcript the
-// office reads: the transcript's own sessionId is its filename, and the app
-// keeps its session list out of reach. So the ids are matched instead, through
-// a small table the user regenerates from inside the desktop app.
+// The app opens a conversation from the link it hands out itself,
+// `claude://claude.ai/epitaxy/local_...`. Nothing on disk ties that `local_`
+// id to the CLI transcript the office reads: the transcript's own sessionId
+// is its filename, and the app keeps its session list out of reach. So the
+// two are matched, through a small table the user regenerates from inside
+// the desktop app.
 //
-// Matching is on the working folder, then on which conversation was last
-// active closest to this one — several conversations often share a folder.
-// A match that is not close in time is no match at all: the office would
-// rather fall back than open the wrong conversation.
+// What is matched on, strongest first:
+//   1. when it began. The app creates a conversation and its transcript in
+//      the same breath; in every case looked at the two start times were
+//      within three seconds. This does not drift, so it still holds for a
+//      conversation that has been going all day.
+//   2. its title, which the app writes into the transcript.
+//   3. when it was last active, for tables written before the first two
+//      were recorded.
+// A conversation that cannot be told apart from another gets no link. The
+// office would rather not jump than open the wrong conversation.
 
 const fs = require('fs');
 const os = require('os');
@@ -20,10 +27,12 @@ const path = require('path');
 
 const MAP_FILE = path.join(os.homedir(), '.whatsmyagentdoing', 'desktop-sessions.json');
 const CLOSE_ENOUGH_MS = 15 * 60_000;
+const BORN_TOGETHER_MS = 60_000;
 const ID_RE = /^local_[A-Za-z0-9-]{1,64}$/;
 
 // Windows paths reach us in both slashes and either case.
 const normCwd = (c) => String(c || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+const normTitle = (t) => String(t || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 let cache = { mtimeMs: -1, byCwd: new Map() };
 
@@ -45,9 +54,13 @@ function load() {
       if (!ID_RE.test(String(s && s.id))) continue;
       const key = normCwd(s.cwd);
       if (!key) continue;
-      const at = Date.parse(s.lastActivityAt) || 0;
       if (!byCwd.has(key)) byCwd.set(key, []);
-      byCwd.get(key).push({ id: s.id, at });
+      byCwd.get(key).push({
+        id: s.id,
+        at: Date.parse(s.lastActivityAt) || 0,
+        born: Date.parse(s.createdAt) || 0,
+        title: normTitle(s.title),
+      });
     }
   } catch {
     // A half-written or malformed table behaves like no table at all.
@@ -56,27 +69,51 @@ function load() {
   return cache;
 }
 
-function linkFor(cwd, lastEventAt) {
+// The id of the desktop conversation this transcript belongs to, or null.
+function match(cwd, lastEventAt, title, startedAt) {
   const rows = load().byCwd.get(normCwd(cwd));
   if (!rows || !rows.length) return null;
+  const at = Number(lastEventAt) || 0;
+  const born = Number(startedAt) || 0;
+  const name = normTitle(title);
 
-  // One conversation in that folder: it is the one, whatever the clock says.
-  // This matters for the session being worked in right now — its activity
-  // keeps moving while the table stays as it was written, so a time test
-  // would lose exactly the person most likely to be clicked.
-  let best = rows[0];
-  if (rows.length > 1) {
-    const at = Number(lastEventAt) || 0;
-    let bestGap = Infinity;
-    for (const r of rows) {
-      const gap = Math.abs(r.at - at);
-      if (gap < bestGap) { bestGap = gap; best = r; }
-    }
-    // Several conversations share the folder and none is clearly this one:
-    // better no jump than a jump into the wrong conversation.
-    if (bestGap > CLOSE_ENOUGH_MS) return null;
+  // 1. Began together.
+  let pool = rows;
+  if (born) {
+    const twins = rows.filter((r) => r.born && Math.abs(r.born - born) <= BORN_TOGETHER_MS);
+    if (twins.length === 1) return twins[0].id;
+    // A row that began at some other moment is some other conversation,
+    // however alike it looks: a new conversation in a folder that had one
+    // would otherwise be sent to the old one.
+    pool = rows.filter((r) => !r.born || Math.abs(r.born - born) <= BORN_TOGETHER_MS);
+    if (!pool.length) return null;
   }
-  return `claude://code/continue?session=${encodeURIComponent(best.id)}&source=url_external`;
+
+  // 2. Same title.
+  if (name) {
+    const same = pool.filter((r) => r.title === name);
+    if (same.length === 1) return same[0].id;
+    if (same.length > 1) pool = same;
+  }
+
+  // 3. Last active at the same time.
+  let best = null;
+  let gap = Infinity;
+  for (const r of pool) {
+    const g = Math.abs(r.at - at);
+    if (g < gap) { gap = g; best = r; }
+  }
+  if (best && gap <= CLOSE_ENOUGH_MS) return best.id;
+
+  // The only conversation in the folder, and nothing says it is a different
+  // one: no start time to compare, and no title on one side or the other.
+  if (rows.length === 1 && pool.length === 1 && !pool[0].born && (!name || !pool[0].title)) return pool[0].id;
+  return null;
 }
 
-module.exports = { linkFor, MAP_FILE };
+function linkFor(cwd, lastEventAt, title, startedAt) {
+  const id = match(cwd, lastEventAt, title, startedAt);
+  return id ? `claude://claude.ai/epitaxy/${id}` : null;
+}
+
+module.exports = { linkFor, match, MAP_FILE };

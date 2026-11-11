@@ -6,6 +6,8 @@
     en: {
       settings: "Settings", agents: "Agents", language: "Language",
       pickTitle: "Who is in the office", pickAuto: "Auto", jump: "Click opens the desktop app",
+      noJump: "No desktop conversation is on record for this one yet. In the Claude desktop app, ask: update the myoffice desktop table",
+      noJumpAgent: "This is a {agent} session; it has no conversation in the Claude desktop app.",
       rename: "Rename", saveLbl: "Save",
       showAgent: "Agent badges",
       pip: "Pop out",
@@ -30,6 +32,8 @@
     'zh-TW': {
       settings: "設定", agents: "顯示哪些 Agent", language: "語言",
       pickTitle: "辦公室成員", pickAuto: "自動", jump: "點小人切到桌面版對話",
+      noJump: "還沒有這隻貓對應的桌面版對話。請在 Claude 桌面版說：更新 myoffice 的桌面對照表",
+      noJumpAgent: "這是 {agent} 的 session，Claude 桌面版裡沒有它的對話。",
       rename: "改名", saveLbl: "儲存",
       showAgent: "Agent 標記",
       pip: "子母畫面",

@@ -75,7 +75,7 @@ function view(s, now, { privacy }) {
   // Only whole Claude Code sessions on this machine have one; a subagent is
   // not a window of its own, and the other clients are not the desktop app.
   if (s.agent === 'claude' && !s.subagent && s.source !== 'magpie') {
-    out.deepLink = desktop.linkFor(s.cwd, out.lastEventAt);
+    out.deepLink = desktop.linkFor(s.cwd, out.lastEventAt, s.title, s.startedAt);
   }
   if (s.agent === 'omp' && s.source !== 'magpie') {
     out.ompProfile = s.ompProfile || null;

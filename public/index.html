@@ -131,6 +131,14 @@
   .r::before { content: "← "; color: var(--faint); }
   .err { font-size: 12.5px; color: var(--error); }
   .today-tokens { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #toast {
+    position: fixed; left: 50%; bottom: 22px; z-index: 1000;
+    max-width: min(92vw, 560px); padding: 9px 14px; border-radius: 10px;
+    background: var(--ink); color: var(--bg); font-size: 13px; line-height: 1.45;
+    opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
+    transition: opacity .18s, transform .18s;
+  }
+  #toast.on { opacity: .96; transform: translate(-50%, 0); }
   .today-panel { width: min(340px, calc(100vw - 32px)); }
   .today-big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
   .today-big div { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
@@ -944,16 +952,41 @@ function nameFor(s) {
   return n['sess:' + s.key] || baseName(s);
 }
 
+// A line of text at the bottom of the page that goes away by itself.
+let toastTimer = 0;
+function toast(text) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 5200);
+}
+
 // Switch the Claude desktop app to this person's conversation. The server
-// works out the link; when it cannot, fall back to the app's own last
-// conversation so a click is never a dead click.
-const JUMP_FALLBACK = 'claude://code/continue?session=last&source=url_external';
+// works out the link. When it cannot, say so and stay put: this used to
+// fall back to the app's last conversation, which is a jump to the wrong
+// one, and worse than no jump.
 function jumpToDesktop(s) {
-  if (!state.jump) return;
-  const url = (s && s.deepLink) || JUMP_FALLBACK;
-  // Windows hands claude:// to the desktop app and the browser stays on this
-  // page, so the office survives the jump — in the pop-out window too.
-  try { location.href = url; } catch { /* a browser that refuses the protocol just does nothing */ }
+  if (!state.jump || !s) return;
+  // A kitten has no window of its own; it lives in its parent's conversation.
+  let who = s;
+  if (s.subagent && s.parentId != null) {
+    who = state.data.sessions.find((p) => p.key === `${s.agent}:${s.parentId}`) || s;
+  }
+  if (who.deepLink) {
+    // Windows hands claude:// to the desktop app and the browser stays on
+    // this page, so the office survives the jump — in the pop-out window too.
+    try { location.href = who.deepLink; } catch { /* a browser that refuses the protocol just does nothing */ }
+    return;
+  }
+  if (who.agent === 'claude') toast(L.noJump || I18N.en.noJump);
+  else toast((L.noJumpAgent || I18N.en.noJumpAgent).replace('{agent}', AGENT_NAME[who.agent] || who.agent));
 }
 const officeOpts = {
   compact: PIP,
