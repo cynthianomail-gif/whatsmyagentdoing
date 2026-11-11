@@ -497,7 +497,10 @@ function applyLang(code) {
   if (legend) legend.innerHTML = ['thinking', 'tool', 'typing', 'waiting', 'done', 'error']
     .map((k) => `<span data-s="${k}"><span class="dot" style="color:var(--s)"></span>${L[k]}</span>`).join('');
   if (typeof renderLangMenu === 'function') renderLangMenu();
-  if (typeof office !== 'undefined' && office) office.offDutyLabel = L.wentHome;
+  if (typeof office !== 'undefined' && office) {
+    office.offDutyLabel = L.wentHome;
+    office.lunchLabel = L.lunch || I18N.en.lunch;
+  }
   if (typeof syncControls === 'function') syncControls();
   if (typeof renderVersion === 'function') renderVersion();
 }
@@ -550,6 +553,14 @@ function readPreferences() {
   }));
 }
 const PIP = new URLSearchParams(location.search).get('pip') === '1';
+// ?lunch (or ?lunch=eat / ?lunch=nap) shows the lunch break at any hour. Read
+// here because the address is tidied a few lines down.
+const LUNCH_PREVIEW = (() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('lunch')) return null;
+  const v = q.get('lunch');
+  return v === 'eat' || v === 'nap' ? v : true;
+})();
 if (PIP) document.body.classList.add('pip');
 
 // ?view=office sets the prefs.
@@ -1024,6 +1035,8 @@ async function makeOffice() {
   const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent });
   office = mine;
   office.offDutyLabel = L.wentHome;
+  office.lunchLabel = L.lunch || I18N.en.lunch;
+  if (LUNCH_PREVIEW != null) office.lunchOverride = LUNCH_PREVIEW;
   office.setInset(panelInset(), false);
   render();
   await mine.ready;

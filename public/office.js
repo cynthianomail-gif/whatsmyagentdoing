@@ -11,6 +11,11 @@
   const MAX_WANDERERS = 7;
   const MAX_KITTENS = 4;           // per parent
   const KITTEN_LINGER = 90 * 1000; // a finished kitten stays this long, then goes
+  // Lunch, by the clock on the wall. Whoever is not working eats or naps,
+  // and the lights go off.
+  const LUNCH_FROM = 12 * 60 + 30, LUNCH_TO = 13 * 60 + 30;
+  const LUNCH_EAT = new Set(['stool', 'meeting']);                 // places with a table
+  const LUNCH_NAP = new Set(['couch', 'beanbag', 'box', 'sun']);   // places to lie down
   const SPEED = 2.1; // tiles / second
 
   // The office is staffed by cats. One breed per session, picked from its key,
@@ -277,7 +282,7 @@
   const ACT_EMOJI = {
     coffee: '☕', water: '💧', fridge: '🍎', sink: '🫧', stool: '💬', couch: '💬', beanbag: '🎧',
     window: '☁️', read: '📖', whiteboard: '✏️', meeting: '💬', arcade: '🎮', pingpong: '🏓', plant: '🌱',
-    vending: '🥤', foosball: '⚽', phone: '📞',
+    vending: '🥤', foosball: '⚽', phone: '📞', bento: '🍱',
     lift: '🏋️', treadmill: '🏃', wheel: '🌀', yoga: '🧘', box: '📦', sun: '☀️',
   };
 
@@ -996,6 +1001,21 @@
       p.path = this.plan.grid.path(p.x, p.y, target.x, target.y);
     }
 
+    // Lunch is 12:30 to 13:30. `lunchOverride` is for looking at it at any
+    // other hour: true, false, or 'eat' / 'nap' to pick which half.
+    isLunch() {
+      if (this.lunchOverride != null) return !!this.lunchOverride;
+      const d = new Date();
+      const m = d.getHours() * 60 + d.getMinutes();
+      return m >= LUNCH_FROM && m < LUNCH_TO;
+    }
+
+    lunchEating() {
+      if (typeof this.lunchOverride === 'string') return this.lunchOverride === 'eat';
+      const d = new Date();
+      return d.getHours() * 60 + d.getMinutes() < LUNCH_FROM + 30;
+    }
+
     // A kitten keeps to its parent: a place beside wherever the parent is
     // headed, so it sets off when the parent does instead of trailing a step
     // behind it.
@@ -1029,9 +1049,14 @@
       const plan = this.plan;
       const workingDesks = new Set([...this.deskOf.values()].map((i) => plan.desks[i]));
       const sleepy = p.s.status === 'idle';
+      // Half the office eats first and sleeps after; the other half the other way
+      // round, so at any moment of the hour there is some of each.
+      const lunch = this.lunch, eating = lunch && this.lunchEating() === (p.h % 2 === 0);
       const weighted = [];
       for (const q of plan.pois) {
         if (q.taken) continue;
+        // At lunch there are only two things to do.
+        if (lunch && !LUNCH_EAT.has(q.act) && !LUNCH_NAP.has(q.act)) continue;
         let w = 1;
         if (q.pair) w = plan.pois.some((o) => o.pair === q.pair && o !== q && o.taken) ? 7 : 1.2;
         if (q.act === 'couch' || q.act === 'beanbag' || q.sleepy) w = sleepy ? 3 : 1.4;
@@ -1042,11 +1067,12 @@
         if (q.act === 'yoga') w = sleepy ? 2.5 : 1.2;
         // A cat that has just finished goes and lies in the sun.
         if (q.act === 'sun') w = p.s.status === 'done' ? 4 : sleepy ? 2 : 1;
+        if (lunch) w = LUNCH_EAT.has(q.act) === eating ? 3 : 1;
         weighted.push([q, w]);
       }
       for (const d of plan.noNap ? [] : plan.desks) {
         if (workingDesks.has(d) || d.napper) continue;
-        weighted.push([{ x: d.seat.x, y: d.seat.y, act: 'nap', face: d.side === 'n' ? 'front' : 'back', sit: 0.34, desk: d }, sleepy ? 3 : 0.25]);
+        weighted.push([{ x: d.seat.x, y: d.seat.y, act: 'nap', face: d.side === 'n' ? 'front' : 'back', sit: 0.34, desk: d }, lunch ? (eating ? 0.5 : 2) : sleepy ? 3 : 0.25]);
       }
       if (!weighted.length) return;
       let r = Math.random() * weighted.reduce((a, [, w]) => a + w, 0);
@@ -1058,7 +1084,7 @@
       p.until = Infinity; // set on arrival
       const long = choice.act === 'nap' || choice.act === 'sun' || choice.act === 'box';
       const mid = ['pingpong', 'lift', 'treadmill', 'wheel', 'yoga'].includes(choice.act);
-      p.stay = (long ? rand(25, 60) : mid ? rand(15, 30) : rand(8, 20)) * 1000;
+      p.stay = (lunch ? rand(240, 540) : long ? rand(25, 60) : mid ? rand(15, 30) : rand(8, 20)) * 1000;
       this.goTo(p, choice);
     }
 
@@ -2540,7 +2566,9 @@
       }
       if (p.mode === 'wander' && p.poi) {
         const q = p.poi;
-        return { pose: q.sit ? 'sit' : 'stand', face: q.face === 'side' ? 'front' : q.face, act: q.act, sitZ: q.sit || q.z || 0 };
+        // At lunch a seat at a table means a lunch box, and anywhere else a nap.
+        const act = this.lunch ? (LUNCH_EAT.has(q.act) ? 'bento' : 'nap') : q.act;
+        return { pose: q.sit ? 'sit' : 'stand', face: q.face === 'side' ? 'front' : q.face, act, sitZ: q.sit || q.z || 0 };
       }
       return { pose: 'stand', face: 'front', act: null, sitZ: 0 };
     }
@@ -2718,6 +2746,23 @@
         case 'scratch': {
           const k = Math.sin(t * 9 + p.phase) > 0 ? 0 : 3;
           paw(-12, top - 5 + k); paw(-10, top - 2 - k);
+          break;
+        }
+        case 'bento': {
+          // A lunch box on the lap: rice, egg, greens, something fried. One
+          // paw holds it and the other brings a bite up.
+          const bite = Math.sin(t * 2.2 + p.phase) > 0.2;
+          if (front) {
+            c.fillStyle = INK; c.fillRect(-5, top + 3, 10, 5);
+            c.fillStyle = '#b8323a'; c.fillRect(-4, top + 4, 8, 3);
+            c.fillStyle = '#ffffff'; c.fillRect(-3, top + 4, 3, 2);
+            c.fillStyle = '#f2c230'; c.fillRect(0, top + 4, 2, 1);
+            c.fillStyle = '#5f9a4c'; c.fillRect(2, top + 4, 1, 2);
+            c.fillStyle = '#c96442'; c.fillRect(0, top + 5, 2, 1);
+          }
+          paw(-7, top + 5);
+          paw(5, bite ? top - 1 : top + 3);
+          if (bite && front) { c.fillStyle = '#ffffff'; c.fillRect(6, top - 2, 1, 1); }
           break;
         }
         case 'kit:yarn': {
@@ -2973,9 +3018,51 @@
       }
     }
 
+    // Lunch: the lights are off. Everything already drawn is dimmed, then
+    // light is added back where there still is some: daylight at the
+    // windows, and a pool of screen light round anyone who is still working.
+    lightsOut(occupant) {
+      const c = this.ctx;
+      const P = (x, y, z) => this.iso(x, y, z);
+      c.save();
+      // source-atop dims only what has been drawn; outside the room the
+      // buffer is clear and stays clear.
+      c.globalCompositeOperation = 'source-atop';
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = this.pal.dark ? 'rgba(3,5,14,.58)' : 'rgba(12,16,40,.58)';
+      c.fillRect(0, 0, this.buf.width, this.buf.height);
+      c.restore();
+
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      if (!skyColor().night) {
+        for (const x of this.plan.windows) {
+          this.poly([P(x, 0, 0.85), P(x + 1.5, 0, 0.85), P(x + 1.5, 0, 2.0), P(x, 0, 2.0)], 'rgba(110,140,180,.38)');
+          this.poly([P(x, 0.05), P(x + 1.5, 0.05), P(x + 2.05, 1.5), P(x + 0.55, 1.5)], 'rgba(255,240,205,.11)');
+        }
+      }
+      for (const [dk, p] of occupant) {
+        if (p.mode !== 'work' || p.path.length) continue;
+        // between the screen and the face it lights
+        this.art(P((dk.x + 0.7 + dk.seat.x) / 2, (dk.y + 0.4 + dk.seat.y) / 2, 0.75), (g) => {
+          pxDisc(g, 0, 0, 24, 13, 'rgba(110,150,255,.08)');
+          pxDisc(g, 0, 0, 17, 9, 'rgba(130,170,255,.09)');
+          pxDisc(g, 0, 0, 10, 6, 'rgba(170,205,255,.10)');
+          pxDisc(g, 0, 0, 5, 3, 'rgba(220,235,255,.08)');
+        });
+      }
+      c.restore();
+    }
+
     // Advance people and the cat; shared by the 2D and 3D renderers.
     step(dt) {
       const wall = Date.now();
+      const lunch = this.isLunch();
+      if (lunch !== this.lunch) {
+        this.lunch = lunch;
+        // The bell: everyone off duty gets up at once, to lunch or back from it.
+        for (const p of this.people.values()) if (p.mode === 'wander') { this.release(p); p.until = 0; }
+      }
       for (const [k, p] of this.people) {
         if (p.mode === 'follow') this.follow(p);
         if (p.mode === 'wander') {
@@ -3034,6 +3121,7 @@
         else this.drawItem(it);
       }
       this.pingPongBall();
+      if (this.lunch) this.lightsOut(occupant);
 
       // Blow the buffer back up with nearest-neighbour: this is the step that
       // turns the whole scene into pixels, not just the cats.
@@ -3052,6 +3140,15 @@
         ...at, x: at.x * this.cam.zoom + this.cam.ox, y: at.y * this.cam.zoom + this.cam.oy,
       });
       for (const [p, at] of heads) this.bubble(p, toScreen(at));
+      if (this.lunch) {
+        v.font = '600 11px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
+        v.textAlign = 'left';
+        v.textBaseline = 'alphabetic';
+        v.fillStyle = this.pal.text;
+        v.globalAlpha = 0.8;
+        v.fillText('🍱 ' + (this.lunchLabel || 'Lunch break'), 12, 20);
+        v.globalAlpha = 1;
+      }
       if (this.offDuty > 0) {
         const d = toScreen(this.iso(0.2, this.plan.door.y + 0.9, 0));
         v.font = '600 10px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
