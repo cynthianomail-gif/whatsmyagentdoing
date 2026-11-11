@@ -1130,10 +1130,25 @@
       const inset = this.inset();
       const vw = Math.max(120, this.cw - inset);
       const fit = Math.min(vw / (right - left + 30), this.ch / (bottom - top + 30), 2);
-      // S screen pixels per art pixel, always whole. A zoom in between would
-      // resample the art and smear it, which is exactly what went wrong when
-      // the camera was free to squeeze a 21-pixel cat into five.
-      const S = Math.max(1, Math.floor(fit * ART + 0.25));
+      // S screen pixels per art pixel. In the main window it is always whole:
+      // a zoom in between would resample the art and smear it, which is
+      // exactly what went wrong when the camera was free to squeeze a
+      // 21-pixel cat into five.
+      //
+      // The pop-out is a window the user drags to the size they want, and a
+      // room that only grows at 1x, 2x, 3x looks stuck in between. There S
+      // follows the window, and settles on a whole number when it is close
+      // to one: a little under is rounded up (a sliver of margin is lost), a
+      // little over is rounded down. The scene is still drawn one buffer
+      // pixel per art pixel; only the enlargement in draw() is fractional.
+      let S;
+      if (this.compact) {
+        const k = Math.max(0.25, fit * ART);
+        const whole = Math.round(k);
+        S = whole >= 1 && k >= whole * 0.94 && k <= whole * 1.12 ? whole : k;
+      } else {
+        S = Math.max(1, Math.floor(fit * ART + 0.25));
+      }
       const zoom = S / ART;
       const snap = (v) => Math.round(v / S) * S;
       this.cam = {
@@ -3128,8 +3143,35 @@
       const v = this.vctx;
       v.setTransform(1, 0, 0, 1, 0, 0);
       v.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      v.imageSmoothingEnabled = false;
-      v.drawImage(this.buf, 0, 0, this.buf.width * S * this.dpr, this.buf.height * S * this.dpr);
+      const kd = S * this.dpr;
+      const dw = this.buf.width * kd, dh = this.buf.height * kd;
+      if (!this.compact || Math.abs(kd - Math.round(kd)) < 0.01) {
+        v.imageSmoothingEnabled = false;
+        v.drawImage(this.buf, 0, 0, dw, dh);
+      } else if (kd < 1) {
+        // Smaller than the art: there are fewer screen pixels than art
+        // pixels, so they have to be averaged.
+        v.imageSmoothingEnabled = true;
+        v.imageSmoothingQuality = 'high';
+        v.drawImage(this.buf, 0, 0, dw, dh);
+      } else {
+        // In between two whole sizes. Nearest-neighbour would make some art
+        // pixels two screen pixels wide and their neighbours three, and a
+        // straight line wobbles. So: enlarge to the next whole size with hard
+        // edges, then bring that down smoothly. Every art pixel comes out the
+        // same width, with one soft screen pixel at its edge.
+        const n = Math.ceil(kd);
+        const up = this.upCanvas || (this.upCanvas = document.createElement('canvas'));
+        const uw = this.buf.width * n, uh = this.buf.height * n;
+        if (up.width !== uw || up.height !== uh) { up.width = uw; up.height = uh; }
+        const u = up.getContext('2d');
+        u.imageSmoothingEnabled = false;
+        u.clearRect(0, 0, uw, uh);
+        u.drawImage(this.buf, 0, 0, uw, uh);
+        v.imageSmoothingEnabled = true;
+        v.imageSmoothingQuality = 'high';
+        v.drawImage(up, 0, 0, dw, dh);
+      }
 
       // Name tags and the off-duty line go on at full resolution, after the
       // scale-up: run through the pixel buffer their text turns to mush.
