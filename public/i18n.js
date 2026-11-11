@@ -6,6 +6,7 @@
     en: {
       settings: "Settings", agents: "Agents", language: "Language",
       pickTitle: "Who is in the office", pickAuto: "Auto", jump: "Click opens the desktop app",
+      rename: "Rename", scopeDir: "This folder", scopeSess: "Just this one",
       showAgent: "Agent badges",
       pip: "Pop out",
       pipClose: "Close pop-out",
@@ -29,6 +30,7 @@
     'zh-TW': {
       settings: "設定", agents: "顯示哪些 Agent", language: "語言",
       pickTitle: "辦公室成員", pickAuto: "自動", jump: "點小人切到桌面版對話",
+      rename: "改名", scopeDir: "整個資料夾", scopeSess: "只有這個",
       showAgent: "Agent 標記",
       pip: "子母畫面",
       pipClose: "關閉子母畫面",
