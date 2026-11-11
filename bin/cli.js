@@ -5,7 +5,6 @@ const http = require('http');
 const { spawn } = require('child_process');
 const { Watcher, CLAUDE_DIR, CODEX_DIR, GEMINI_DIR, CLIENT_DIRS, ompDirs, ANTIGRAVITY_DIR } = require('../src/watcher');
 const { DemoWatcher } = require('../src/demo');
-const scenes = require('../src/scenes');
 const updater = require('../src/update');
 const hook = require('../src/hook');
 const { createServer, snapshot } = require('../src/server');
@@ -28,9 +27,6 @@ Options:
   --demo            Show a made-up team instead of your sessions
   --stop            Stop a running dashboard
   --update          Update to the latest version (git pull) and restart a running dashboard
-  --scenes          List 3D scenes (installed and downloadable)
-  --scene <id>      Download a scene if needed and open the office in it
-  --remove-scene <id>  Delete a downloaded scene
   --install-hook    Optional: add a Claude Code hook so permission prompts show "Waiting for you"
   --uninstall-hook  Remove that hook again
   -h, --help        Show this help
@@ -57,7 +53,7 @@ For multiple local instances, WMAD_MAGPIE_SOURCES is a JSON array
 of {url, key} objects, used instead of the single-source variables.`;
 
 function parseArgs(argv) {
-  const o = { port: 4545, hours: 24, open: true, privacy: false, json: false, demo: false, stop: false, scenes: false, scene: null, removeScene: null, update: false };
+  const o = { port: 4545, hours: 24, open: true, privacy: false, json: false, demo: false, stop: false, update: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') { console.log(HELP); process.exit(0); }
@@ -77,10 +73,6 @@ function parseArgs(argv) {
     else if (a === '--demo') o.demo = true;
     else if (a === '--stop') o.stop = true;
     else if (a === '--update') o.update = true;
-    else if (a === '--scenes') o.scenes = true;
-    else if (a === '--scene') o.scene = argv[++i];
-    else if (a.startsWith('--scene=')) o.scene = a.slice(8);
-    else if (a === '--remove-scene') o.removeScene = argv[++i];
     else if (a === '--hook') o.hook = true;
     else if (a === '--install-hook') o.installHook = true;
     else if (a === '--uninstall-hook') o.uninstallHook = true;
@@ -170,34 +162,6 @@ async function main() {
     return;
   }
 
-  if (o.scenes) {
-    const have = scenes.installed();
-    const name = (x) => (x.name && (x.name.en || Object.values(x.name)[0])) || x.id;
-    console.log('3D scenes (pick one with --scene <id>, or from the scene menu in High 3D):');
-    console.log('  office      Office (built in)');
-    for (const x of have) console.log(`  ${x.id.padEnd(11)} ${name(x)} (installed)`);
-    for (const x of scenes.catalog().filter((c) => !have.some((h) => h.id === c.id))) {
-      console.log(`  ${x.id.padEnd(11)} ${name(x)} (download, ${Math.max(1, Math.round(x.size / 1024))} KB)`);
-    }
-    return;
-  }
-
-  if (o.removeScene) {
-    console.log(scenes.remove(o.removeScene) ? `Removed ${o.removeScene}.` : `${o.removeScene} isn't a downloaded scene.`);
-    return;
-  }
-
-  if (o.scene && o.scene !== 'office') {
-    try {
-      const had = scenes.sceneDir(o.scene);
-      const x = await scenes.install(o.scene);
-      console.log(had ? `Scene ${x.id} is ready.` : `Downloaded scene ${x.id}.`);
-    } catch (e) {
-      console.error(String(e.message || e));
-      process.exit(1);
-    }
-  }
-
   if (o.stop) {
     // It may have moved to a later port if the default was taken.
     const ports = [];
@@ -222,9 +186,8 @@ async function main() {
     return;
   }
 
-  const query = o.scene ? `/?view=office&quality=high&scene=${encodeURIComponent(o.scene)}` : '';
   if (await alreadyRunning(o.port)) {
-    const url = `http://localhost:${o.port}${query}`;
+    const url = `http://localhost:${o.port}`;
     console.log(`Already running at ${url}`);
     await printUpdateHint();
     if (o.open) openBrowser(url);
@@ -242,7 +205,7 @@ async function main() {
     onRestart: () => {
       watcher.stop();
       server.close(() => {
-        const args = process.argv.slice(2).filter((a) => a !== '--no-open' && !a.startsWith('--scene'));
+        const args = process.argv.slice(2).filter((a) => a !== '--no-open');
         spawn(process.execPath, [__filename, ...args, '--no-open'], { detached: true, stdio: 'ignore' }).unref();
         process.exit(0);
       });
@@ -258,11 +221,10 @@ async function main() {
     server.listen(port, '127.0.0.1', () => {
       const url = `http://localhost:${port}`;
       const n = watcher.sessions().length;
-      const openUrl = url + query;
       const what = o.demo ? 'demo team' : `${n} session${n === 1 ? '' : 's'} in the last ${o.hours}h`;
       console.log(`whatsmyagentdoing v${updater.localVersion()} → ${url}  (${what}, Ctrl+C to stop)`);
       printUpdateHint();
-      if (o.open) openBrowser(openUrl);
+      if (o.open) openBrowser(url);
     });
   };
   listen(o.port, 10);

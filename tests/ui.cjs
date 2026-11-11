@@ -158,26 +158,19 @@ async function drawnLogos(target) {
   assert.equal(await page.locator('#agentLegend').isVisible(),false);
   await page.reload();await stable(page);assert.equal(await page.locator('#showAgent').isChecked(),false);
   await openSettings(page);await page.check('#showAgent');check('badge toggle hides markers and legend and persists across reload');
-  await page.click('#qualSeg [data-v=high]');
-  await page.waitForFunction(()=>officeKind==='high:office'&&office?.loaded&&office.framesShown>4,{},{timeout:30000});
-  assert.deepEqual([...new Set(await badges(page))].sort(),['Cl','Cx','G','OMP']);
-  await screenshot(page, 'office-3d');
-  assert.deepEqual(await drawnLogos(page),['claude','codex','gemini','omp']);
-  check('3D shows the same four provider badges');
   if (!clientsOnly) {
   await page.click('#pipBtn');await page.waitForFunction(()=>!!popout.win);
   const pip=context.pages().find(p=>p!==page);assert.ok(pip);
   const frame=await (async()=>{for(let i=0;i<100;i++){const f=pip.frames().find(f=>f.url().includes('?pip=1'));if(f)return f;await new Promise(r=>setTimeout(r,50))}throw Error('No compact frame')})();
-  await frame.waitForFunction(()=>office?.loaded&&office.framesShown>4);
+  await frame.waitForFunction(()=>office?.framesShown>4);
   await frame.evaluate(s=>{window.__events?.close();onData({now:Date.now(),sessions:s})},sessions);
   assert.deepEqual(await drawnLogos(frame),['claude','codex','gemini','omp']);
   assert.equal(await page.evaluate(()=>office.visible),false);
-  assert.equal(await frame.evaluate(()=>state.quality),'high');
   assert.equal(await frame.locator('#pipBtn').isVisible(),false);
   await pip.setViewportSize({width:480,height:400});
-  await frame.waitForFunction(()=>!document.getElementById('office').classList.contains('loading'));await page.waitForTimeout(400);await screenshot(pip, 'pip-3d');
+  await frame.waitForFunction(()=>!document.getElementById('office').classList.contains('loading'));await page.waitForTimeout(400);await screenshot(pip, 'pip-office');
   assert.equal(await frame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  check('real Document PiP opens 3D at compact size and suspends the main office');
+  check('real Document PiP opens at compact size and suspends the main office');
   await filterAgent(page,'omp');await frame.waitForFunction(()=>state.agents.join()==='omp');
   await frame.click('#viewSeg [data-v=list]');
   assert.equal(await frame.locator('.card').count(),1);
@@ -201,9 +194,8 @@ async function drawnLogos(target) {
   assert.equal(await page.evaluate(()=>__notifications.length),1);
   check('only the main page emits completion notifications');
   await filterAgent(page,'all');
-  await frame.click('#viewSeg [data-v=office]');await openSettings(page);await page.check('#showAgent');await frame.click('#qualSeg [data-v=mid]');
+  await frame.click('#viewSeg [data-v=office]');await openSettings(page);await page.check('#showAgent');
   await frame.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4);
-  await page.waitForFunction(()=>state.quality==='mid');
   const foreground=await context.newPage();await foreground.goto('about:blank');await foreground.bringToFront();
   const before=await frame.evaluate(()=>({frames:office.framesShown,visible:document.visibilityState}));
   await new Promise(r=>setTimeout(r,1100));
@@ -232,8 +224,8 @@ async function drawnLogos(target) {
   // Force only the capability branch; rendering and MediaStream remain real.
   const fallback=await context.newPage();
   await fallback.addInitScript(()=>Object.defineProperty(window,'documentPictureInPicture',{value:undefined}));
-  await fallback.goto(base+'/?view=office&quality=high');await stable(fallback);
-  await fallback.waitForFunction(()=>office.loaded&&office.framesShown>4);
+  await fallback.goto(base+'/?view=office');await stable(fallback);
+  await fallback.waitForFunction(()=>office.framesShown>4);
   await fallback.click('#pipBtn');
   await fallback.waitForFunction(()=>!!popout.stream&&!popout.busy&&document.getElementById('pipVideo').videoWidth>0);
   assert.equal(await fallback.locator('#pipPreview').isVisible(),true);
@@ -242,13 +234,11 @@ async function drawnLogos(target) {
    for(let i=0;i<data.length;i+=160)values.add(`${data[i]},${data[i+1]},${data[i+2]}`);
    window.__stream=popout.stream;return values.size;
   });
-  assert.ok(colors>20,'preview includes rendered 3D content rather than a blank frame');
-  await fallback.click('#qualSeg [data-v=mid]');await fallback.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4);
-  assert.equal(await fallback.evaluate(()=>popout.stream===__stream),true);
+  assert.ok(colors>20,'preview includes rendered office content rather than a blank frame');
   await fallback.click('#closePreview');await fallback.waitForFunction(()=>!popout.stream);
   assert.equal(await fallback.evaluate(()=>__stream.getTracks().every(t=>t.readyState==='ended')),true);
   assert.equal(await fallback.evaluate(()=>document.getElementById('pipVideo').srcObject),null);
-  check('video fallback captures 3D + overlay, survives renderer changes and releases media tracks on stop');
+  check('video fallback captures the office + overlay and releases media tracks on stop');
   const compact=await context.newPage();await compact.goto(base+'/?pip=1&view=list');
   await compact.waitForFunction(()=>state.loaded);
   await compact.evaluate(()=>{__events.close();onData({now:Date.now(),sessions:[]})});
@@ -289,11 +279,8 @@ async function drawnLogos(target) {
   await page.evaluate(s=>{__events.close();onData({now:Date.now(),sessions:s})},magpieSessions);
   assert.deepEqual(await page.evaluate(()=>state.agents),['opencode']);
   await filterAgent(page,'all');
-  for (const quality of ['mid','high']) {
-   await page.click(`#qualSeg [data-v=${quality}]`);
-   await page.waitForFunction(q=>officeKind.startsWith(q)&&office.framesShown>4&&(q!=='high'||office.loaded),quality);
-   assert.equal(await page.evaluate(()=>office.people.has('opencode:remote')),true);
-  }
+  await page.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4);
+  assert.equal(await page.evaluate(()=>office.people.has('opencode:remote')),true);
   await page.hover('#side .srow >> nth=0');
   const before=await rowKeys(page);
   await page.evaluate(([s,k])=>onData({now:Date.now(),sessions:s.map(x=>x.key===k?{...x,status:'done'}:x)}),[magpieSessions,before[0]]);
@@ -332,25 +319,22 @@ async function drawnLogos(target) {
   await openSettings(page);await page.check('#showSub');
   assert.equal(await page.locator('#side .srow').count(),2);
   await filterAgent(page,'all');
-  for (const quality of ['mid','high']) {
-   await page.click(`#qualSeg [data-v=${quality}]`);
-   await page.waitForFunction(q=>officeKind.startsWith(q)&&office.framesShown>4&&(q!=='high'||office.loaded),quality);
-   // Reused renderers animate the previous fixture's people walking out.
-   await page.waitForFunction(keys=>office.people.size===keys.length&&keys.every(k=>office.people.has(k)),nativeClients.map(s=>s.key));
-   assert.deepEqual([...new Set(await badges(page))].sort(),['Ds','Gr','Ki']);
-   assert.deepEqual(await drawnLogos(page),['dsh','grok','kimi']);
-   assert.equal(await page.evaluate(()=>office.people.has('kimi:one/agent-1')),true);
-   await page.evaluate(s=>onData({now:Date.now(),sessions:s.filter(x=>x.agent==='kimi')}),nativeClients);
-   assert.equal(await page.locator('#agentLegend img').count(),1, 'two Kimi sessions share one legend entry');
-   await page.evaluate(()=>onData({now:Date.now(),sessions:[]}));
-   assert.equal(await page.locator('#agentLegend img').count(),0);
-   assert.equal(await page.locator('#agentLegend').isHidden(),true);
-   await page.evaluate(s=>onData({now:Date.now(),sessions:s}),nativeClients);
-   assert.equal(await page.locator('#agentLegend img').count(),3);
-   assert.equal(await page.locator('#agentLegend').isVisible(),true);
-  }
-  check('Kimi, DSH and Grok support filters, subagents, resume commands and packaged logos in both offices');
-  check('agent legends follow current sessions and filters, disappear when empty and return without duplicates in 2D/3D');
+  await page.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4);
+  // Reused renderers animate the previous fixture's people walking out.
+  await page.waitForFunction(keys=>office.people.size===keys.length&&keys.every(k=>office.people.has(k)),nativeClients.map(s=>s.key));
+  assert.deepEqual([...new Set(await badges(page))].sort(),['Ds','Gr','Ki']);
+  assert.deepEqual(await drawnLogos(page),['dsh','grok','kimi']);
+  assert.equal(await page.evaluate(()=>office.people.has('kimi:one/agent-1')),true);
+  await page.evaluate(s=>onData({now:Date.now(),sessions:s.filter(x=>x.agent==='kimi')}),nativeClients);
+  assert.equal(await page.locator('#agentLegend img').count(),1, 'two Kimi sessions share one legend entry');
+  await page.evaluate(()=>onData({now:Date.now(),sessions:[]}));
+  assert.equal(await page.locator('#agentLegend img').count(),0);
+  assert.equal(await page.locator('#agentLegend').isHidden(),true);
+  await page.evaluate(s=>onData({now:Date.now(),sessions:s}),nativeClients);
+  assert.equal(await page.locator('#agentLegend img').count(),3);
+  assert.equal(await page.locator('#agentLegend').isVisible(),true);
+  check('Kimi, DSH and Grok support filters, subagents, resume commands and packaged logos in the office');
+  check('agent legends follow current sessions and filters, disappear when empty and return without duplicates');
   const antigravity = [
    {key:'antigravity:conv-1',id:'conv-1',agent:'antigravity',status:'tool',activity:'Bash: npm test',cwd:'/demo/agy'},
    {key:'antigravity:conv-2',id:'conv-2',parentId:'conv-1',subagent:true,agent:'antigravity',status:'thinking',cwd:'/demo/agy'},
@@ -379,20 +363,16 @@ async function drawnLogos(target) {
    }
    await screenshot(page,`panel-${colorScheme}`);
    await page.locator('#settingsMenu > summary').press('Escape');
-   for(const quality of ['mid','high']) {
-    await page.click(`#qualSeg [data-v=${quality}]`);
-    await page.waitForFunction(q=>officeKind.startsWith(q)&&office.framesShown>4&&(q!=='high'||office.loaded),quality);
-    assert.deepEqual(await drawnLogos(page),['dsh','grok','kimi']);
-    await screenshot(page,`office-${quality}-${colorScheme}`);
-   }
+   await page.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4);
+   assert.deepEqual(await drawnLogos(page),['dsh','grok','kimi']);
+   await screenshot(page,`office-mid-${colorScheme}`);
   }
-  check('agent panel, filters, legend and both offices preserve light/dark native logos');
+  check('agent panel, filters, legend and the office preserve light/dark native logos');
   const fallbackPage=await context.newPage();
   await fallbackPage.route('**/assets/agents/kimi.svg',route=>route.abort());
   await fallbackPage.goto(base);
   await fallbackPage.waitForFunction(()=>state.loaded);
   await fallbackPage.evaluate(s=>{__events.close();state.agents=[];state.showSub=true;onData({now:Date.now(),sessions:s})},nativeClients);
-  await fallbackPage.click('#qualSeg [data-v=mid]');
   await fallbackPage.waitForFunction(()=>officeKind==='mid'&&office.framesShown>4&&OFFICE_AGENT_BADGES.kimi.image.complete);
   assert.equal(await fallbackPage.evaluate(()=>OFFICE_AGENT_BADGES.kimi.image.naturalWidth),0);
   assert.equal(await fallbackPage.evaluate(()=>{

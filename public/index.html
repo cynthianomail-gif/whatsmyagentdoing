@@ -67,8 +67,6 @@
   .seg button { border: 0; background: none; color: var(--muted); padding: 5px 12px; border-radius: 5px; font: inherit; font-size: 12.5px; cursor: pointer; }
   .seg button:hover:not(.on) { color: var(--ink); background: var(--bg); }
   .seg button.on { background: var(--ink); color: var(--bg); }
-  #qualSeg { border-color: transparent; background: transparent; }
-  #qualSeg button.on { background: var(--line); color: var(--ink); }
   .seg button small { opacity: .65; font-size: 11px; }
   label.tog { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none; }
   .btn { border: 1px solid var(--line); background: var(--panel); color: var(--muted); padding: 5px 11px; border-radius: 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
@@ -149,13 +147,9 @@
   .ctx.full .bar i { background: var(--error); }
   /* ---- toolbar menus and controls, styled to match (no browser defaults) */
   details.menu > summary { gap: 7px; }
-  .scene-ico { display: inline-flex; }
-  .scene-art { width: 18px; height: 18px; flex: none; display: block; object-fit: contain; }
-  .scene-list .thumb .scene-art { width: 22px; height: 22px; }
-  #sceneName, #langName { max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Scene, agent and language menus share one compact list. */
+  #langName { max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Agent and language menus share one compact list. */
   .list-panel { width: 250px; padding: 12px; }
-  .scene-panel { right: auto; left: 0; }
   .pick-list { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; }
   .pick-list button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 6px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
   .pick-list button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
@@ -165,8 +159,6 @@
   .pick-list button.on { font-weight: 600; }
   .pick-list button.on .chk { opacity: 1; }
   .pick-list .agent-logo { width: 16px; height: 16px; margin: 0; }
-  .scene-list .thumb { flex: none; width: 44px; height: 28px; border-radius: 5px; overflow: hidden; display: grid; place-items: center; background: color-mix(in srgb, var(--ink) 7%, var(--panel)); color: var(--muted); }
-  .scene-list .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   /* Agent rows: a checkbox square, the logo, the name and a count */
   #agentChips .box { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border: 1.5px solid color-mix(in srgb, var(--ink) 30%, var(--line)); border-radius: 4px; }
   #agentChips .box .chk { width: 12px; height: 12px; opacity: 0; color: #fff; stroke-width: 2.6; }
@@ -278,15 +270,12 @@
     html body.full .controls { flex-wrap: nowrap; gap: 6px; }
     body.full #pipBtn { display: none !important; }
     body.full details.menu > summary { gap: 0; padding-inline: 9px; }
-    body.full #sceneMenu > summary { gap: 6px; }
-    body.full #sceneName { max-width: 6.5em; }
     body.full details.menu > summary::after,
     body.full #agentName, body.full #langName, body.full .today-tokens,
     body.full #todayMenu > summary [data-t], body.full #settingsMenu > summary [data-t] { display: none; }
     body.full details.menu.active > summary { position: relative; }
     body.full details.menu.active > summary::before { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--tool); }
   }
-  @media (max-width: 359px) { body.full #sceneName { display: none; } }
   @media (max-width: 760px) {
     body.full .side { width: min(340px, 88vw); }
     body.full h1, body.full .summary { display: none; }
@@ -367,7 +356,7 @@
   body.pip .wrap { height: calc(100dvh - 16px); display: flex; flex-direction: column; }
   body.pip header { gap: 6px; margin-bottom: 8px; flex: none; }
   body.pip h1, body.pip .newver, body.pip #legend, body.pip .ver,
-  body.pip .controls > :not(#viewSeg):not(#qualSeg) { display: none !important; }
+  body.pip .controls > :not(#viewSeg) { display: none !important; }
   body.pip .controls { width: auto; padding: 0; border: 0; }
   body.pip .chip { padding: 2px 6px; font-size: 11px; }
   body.pip .summary { gap: 4px; width: auto; margin-left: 0; }
@@ -391,17 +380,6 @@
         <button data-v="office" data-t="office"></button>
         <button data-v="list" data-t="list"></button>
       </div>
-      <div class="seg" id="qualSeg">
-        <button data-v="mid" data-t="qMid"></button>
-        <button data-v="high" data-t="qHigh"></button>
-      </div>
-      <details class="settings menu" id="sceneMenu">
-        <summary class="btn" aria-controls="scenePanel" data-a="scene"><span class="scene-ico" id="sceneIco"></span><span id="sceneName"></span></summary>
-        <div class="settings-panel list-panel scene-panel" id="scenePanel">
-          <div class="setting-label" data-t="scene"></div>
-          <div class="pick-list scene-list" id="sceneSeg" role="group"></div>
-        </div>
-      </details>
       <span class="toolbar-space" aria-hidden="true"></span>
       <button class="btn" id="pipBtn" hidden></button>
       <details class="settings menu" id="todayMenu">
@@ -505,7 +483,6 @@ function applyLang(code) {
   if (typeof renderLangMenu === 'function') renderLangMenu();
   if (typeof office !== 'undefined' && office) office.offDutyLabel = L.wentHome;
   if (typeof syncControls === 'function') syncControls();
-  if (typeof renderSceneSel === 'function') renderSceneSel();
   if (typeof renderVersion === 'function') renderVersion();
 }
 
@@ -516,7 +493,7 @@ const store = (() => {
   return { get, set };
 })();
 
-const PREF_DEFAULTS = { view: 'office', quality: 'mid', scene: 'office', agents: [], picked: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, jump: true, lang: 'auto' };
+const PREF_DEFAULTS = { view: 'office', agents: [], picked: [], showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, jump: true, lang: 'auto' };
 function validAgentId(v) {
   return typeof v === 'string' && v !== 'all' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(v) && !Object.hasOwn(Object.prototype, v);
 }
@@ -528,7 +505,6 @@ function validPreference(k, v) {
   if (!Object.hasOwn(PREF_DEFAULTS, k)) return false;
   if (typeof PREF_DEFAULTS[k] === 'boolean') return typeof v === 'boolean';
   if (k === 'view') return ['office', 'list'].includes(v);
-  if (k === 'quality') return ['mid', 'high'].includes(v);
   // Which agents to show; none selected means all of them.
   if (k === 'agents') return Array.isArray(v) && v.length <= 32 && v.every(validAgentId);
   // Hand-picked sessions; none picked means the office fills itself as before.
@@ -551,7 +527,7 @@ function readPreferences() {
 const PIP = new URLSearchParams(location.search).get('pip') === '1';
 if (PIP) document.body.classList.add('pip');
 
-// ?view=office&quality=high&scene=pirate (what `--scene` opens) sets the prefs.
+// ?view=office sets the prefs.
 {
   const q = new URLSearchParams(location.search);
   if (PIP) {
@@ -559,7 +535,7 @@ if (PIP) document.body.classList.add('pip');
       for (const [k, v] of Object.entries(JSON.parse(q.get('prefs')) || {})) if (validPreference(k, v)) store.set(k, v);
     } catch { /* malformed preferences use the saved defaults */ }
   }
-  for (const k of ['view', 'quality', 'scene', 'lang']) if (validPreference(k, q.get(k))) store.set(k, q.get(k));
+  for (const k of ['view', 'lang']) if (validPreference(k, q.get(k))) store.set(k, q.get(k));
   if (location.search) history.replaceState(null, '', location.pathname + (PIP ? '?pip=1' : ''));
 }
 
@@ -567,7 +543,6 @@ const state = {
   ...readPreferences(),
   // The dashboard is always the full-window office with the agent panel; the pop-out keeps its compact views.
   full: !PIP,
-  scenes: [],
   data: { now: Date.now(), sessions: [] },
   skew: 0,
   prev: new Map(),
@@ -860,10 +835,6 @@ document.addEventListener('keydown', (e) => {
 });
 settingsMenu.addEventListener('toggle', () => { if (settingsMenu.open) hideTip(); });
 
-document.getElementById('qualSeg').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  state.quality = b.dataset.v; store.set('quality', state.quality); hideTip(); syncControls(); makeOffice();
-});
 document.getElementById('viewSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   state.view = b.dataset.v; store.set('view', state.view); hideTip(); syncControls(); render();
@@ -889,9 +860,6 @@ function syncControls() {
   document.getElementById('jumpLabel').textContent = L.jump || 'Click opens the desktop app';
   const view = state.full ? 'office' : state.view;
   document.querySelectorAll('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.view));
-  document.querySelectorAll('#qualSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.quality));
-  document.getElementById('qualSeg').style.display = view === 'office' ? '' : 'none';
-  document.getElementById('sceneMenu').hidden = view !== 'office' || state.quality !== 'high';
   document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', b.classList.contains('on')));
   showSub.checked = state.showSub;
   showIdle.checked = state.showIdle;
@@ -974,8 +942,7 @@ const officeOpts = {
 };
 let office = null;
 let officeKind = null;
-// The 3D office (three.js + models) is only fetched when someone picks it.
-// Until the new office has drawn a settled frame, show a loader instead of a
+// Until the office has drawn a settled frame, show a loader instead of a
 // half-built scene.
 const officeEl = document.getElementById('office');
 function setLoading(on, text) {
@@ -983,105 +950,22 @@ function setLoading(on, text) {
   if (text) document.getElementById('loaderText').textContent = text;
 }
 async function makeOffice() {
-  const high = state.quality === 'high';
-  const scene = high && state.scene !== 'office' && state.scenes.some((x) => x.id === state.scene) ? state.scene : 'office';
-  const kind = high ? `high:${scene}` : 'mid';
-  if (kind === officeKind) return;
-  officeKind = kind;
-  setLoading(true, high ? L.loading3d : L.loading2d);
-  let Cls = window.Office;
-  const opts = { ...officeOpts, showAgent: state.showAgent };
-  if (high) {
-    try {
-      Cls = (await import('/office3d.js')).Office3D;
-      if (scene !== 'office') {
-        const m = await fetch(`/scenes/${scene}/manifest.json`).then((r) => r.json());
-        opts.scene = { ...m, base: `/scenes/${scene}/` };
-      }
-    } catch (e) { console.error(e); Cls = window.Office; }
-    if (officeKind !== kind) return;
-  }
+  if (officeKind === 'mid') return;
+  officeKind = 'mid';
+  setLoading(true, L.loading2d);
   if (office) office.destroy();
-  let mine;
-  try {
-    mine = new Cls(officeEl, opts);
-  } catch (e) {
-    console.error(e);
-    mine = new window.Office(officeEl, officeOpts);
-    if (high) { state.quality = 'mid'; store.set('quality', 'mid'); officeKind = 'mid'; syncControls(); }
-  }
+  const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent });
   office = mine;
   office.offDutyLabel = L.wentHome;
   office.setInset(panelInset(), false);
   render();
-  const ok = await mine.ready;
+  await mine.ready;
   if (office !== mine) return;
-  if (!ok && high) {
-    // 3D failed (no WebGL, missing files…): fall back to the 2D office.
-    setLoading(true, L.failed3d);
-    state.quality = 'mid'; store.set('quality', 'mid'); syncControls();
-    setTimeout(() => makeOffice(), 1200);
-    return;
-  }
   setLoading(false);
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); });
 
-// Scenes (3D only): the built-in office plus any installed scene packs.
-const sceneSel = document.getElementById('sceneSeg');
-state.available = [];
 const CHECK = '<svg class="ui-ico chk" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-// Scene icons are small illustrations, one per known pack; any other pack gets a map.
-const SCENE_ICONS = new Set(['office', 'graveyard', 'pirate', 'cafe', 'station', 'castle', 'christmas', 'arcade']);
-const SCENE_THUMBS = new Set(['office', 'graveyard', 'pirate', 'cafe', 'station', 'castle', 'christmas', 'arcade']);
-const sceneIcon = (id) => `<img class="scene-art" src="/assets/scene-icons/${SCENE_ICONS.has(id) ? id : 'map'}.png" alt="">`;
-const DOWNLOAD = '<svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>';
-function renderSceneSel() {
-  const name = (x) => (x.name && (x.name[langCode] || x.name.en)) || x.id;
-  const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-  const current = state.scenes.some((x) => x.id === state.scene) ? state.scene : 'office';
-  const btn = (v, label, title = '') =>
-    `<button data-v="${esc(v)}" class="${v === current ? 'on' : ''}" aria-pressed="${v === current}"${title ? ` title="${esc(title)}"` : ''}>${label}</button>`;
-  const card = (id, v, label, sub, title) => btn(v,
-    `<span class="thumb">${SCENE_THUMBS.has(id) ? `<img src="/assets/scenes/${id}.jpg" alt="" loading="lazy">` : sceneIcon(id)}</span>` +
-    `<span class="lbl">${label}</span>${sub ? `<small>${sub}</small>` : ''}${CHECK}`, title);
-  sceneSel.innerHTML = card('office', 'office', esc(L.office)) +
-    state.scenes.map((x) => card(x.id, x.id, esc(name(x)), '', x.credits || '')).join('') +
-    state.available.map((x) => card(x.id, `dl:${x.id}`, esc(name(x)), `${DOWNLOAD}${kb(x.size)}`, `${L.dl} ${kb(x.size)}`)).join('');
-  const cur = current === 'office' ? L.office : name(state.scenes.find((x) => x.id === current) || { id: current });
-  document.getElementById('sceneIco').innerHTML = sceneIcon(current);
-  document.getElementById('sceneName').textContent = cur;
-}
-function loadScenes() {
-  return fetch('/api/scenes').then((r) => r.json()).then((d) => {
-    state.scenes = d.installed || [];
-    state.available = d.available || [];
-    renderSceneSel();
-  }).catch(() => {});
-}
-sceneSel.addEventListener('click', async (e) => {
-  const b = e.target.closest('button');
-  if (!b || b.classList.contains('on') || sceneSel.dataset.busy) return;
-  let id = b.dataset.v;
-  hideTip();
-  if (id.startsWith('dl:')) {
-    // A scene pack: download it (the server checks its checksum), then switch.
-    id = id.slice(3);
-    sceneSel.dataset.busy = '1';
-    setLoading(true, L.installing);
-    const r = await fetch(`/api/scenes/install?id=${encodeURIComponent(id)}`, { method: 'POST', headers: { 'x-whatsmyagentdoing': 'install' } })
-      .then((x) => x.json()).catch(() => ({ ok: false }));
-    await loadScenes();
-    delete sceneSel.dataset.busy;
-    if (!r.ok) { setLoading(true, L.installFailed); setTimeout(() => setLoading(false), 2000); renderSceneSel(); return; }
-  }
-  state.scene = id; store.set('scene', id); renderSceneSel(); makeOffice();
-  closeMenus();
-});
-// Know the installed scenes before building the first office, so a saved
-// scene choice doesn't build the default office first and then swap.
-const scenesReady = loadScenes();
-
 // ---- version + one-click update
 const verEl = document.getElementById('ver');
 let verInfo = null;
@@ -1142,7 +1026,7 @@ popout = new OfficePopout({
   text: (key) => L[key],
   changed: () => { syncControls(); render(); },
 });
-// Both windows share preferences; keep filters, language, scene and badges in
+// Both windows share preferences; keep filters, language and badges in
 // sync even when changes come from the compact window or another open tab.
 window.addEventListener('storage', (e) => {
   if (e.key !== null && !Object.keys(PREF_DEFAULTS).some((k) => e.key === 'wmad.' + k)) return;
@@ -1151,13 +1035,12 @@ window.addEventListener('storage', (e) => {
   hideTip();
   applyLang(chooseLang(state.data.lang));
   syncControls();
-  renderSceneSel();
   makeOffice();
   render();
 });
 applyLang(chooseLang(null));
 syncControls();
-scenesReady.then(() => makeOffice());
+Promise.resolve().then(() => makeOffice()); // after the rest of this script has run (render() needs its later consts)
 connect();
 // ---- full screen: the office fills the window; agents and their recent
 // conversation live in a side panel (list first, one agent on click).

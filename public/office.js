@@ -1232,215 +1232,227 @@
       const br = p.breed || BREEDS[0];
       const fur = br.fur;
       const furDark = br.dark;
+      const INK = '#241f1c';
 
-      // Tail first, so it sits behind the body. It swings while walking and
-      // only drifts while standing or sitting.
+      // Sticker look: flat colour inside a dark outline. The outline is what
+      // keeps a cat this small readable against the office floor.
+      const pen = (w) => { c.strokeStyle = INK; c.lineWidth = w; c.lineJoin = 'round'; c.lineCap = 'round'; };
+      const rrPath = (rx, ry, rw, rh, r) => {
+        const top = rh < 0 ? ry + rh : ry;
+        const h = Math.abs(rh);
+        const rad = Math.min(r, Math.abs(rw) / 2, h / 2);
+        c.beginPath();
+        c.moveTo(rx + rad, top);
+        c.arcTo(rx + rw, top, rx + rw, top + h, rad);
+        c.arcTo(rx + rw, top + h, rx, top + h, rad);
+        c.arcTo(rx, top + h, rx, top, rad);
+        c.arcTo(rx, top, rx + rw, top, rad);
+        c.closePath();
+      };
+      // One outlined limb. The activity poses below place these exactly where
+      // the arms and legs used to go, so every pose keeps animating.
+      const limb = (lx, ly, lw, lh, fill) => {
+        rrPath(lx, ly, lw, lh, 1.5);
+        c.fillStyle = fill || fur; c.fill(); pen(1.5); c.stroke();
+      };
+
+      // Tail, behind everything: stroked twice, ink then fur, for the outline.
       {
         const sway = Math.sin(t * (moving ? 6 : 1.6) + p.phase) * (moving ? 3.2 : 1.4);
         const root = seated ? -3 : -8;
-        c.strokeStyle = fur;
-        c.lineWidth = 3;
-        c.lineCap = 'round';
-        c.beginPath();
-        c.moveTo(5, root);
-        c.quadraticCurveTo(12 + sway, root - 2, 12.5 + sway, root - 11);
-        c.stroke();
-        if (br.stripes) {
-          c.strokeStyle = furDark;
-          c.lineWidth = 1.2;
-          c.beginPath(); c.moveTo(10.5 + sway * 0.8, root - 4); c.lineTo(13.5 + sway * 0.8, root - 4.6); c.stroke();
-          c.beginPath(); c.moveTo(11 + sway, root - 8); c.lineTo(14 + sway, root - 8.4); c.stroke();
-        }
-        c.lineCap = 'butt';
+        const tail = () => {
+          c.beginPath();
+          c.moveTo(4.5, root);
+          c.quadraticCurveTo(12 + sway, root - 2, 12.5 + sway, root - 11);
+        };
+        pen(5.4); tail(); c.stroke();
+        c.strokeStyle = fur; c.lineWidth = 2.8; tail(); c.stroke();
       }
 
-      c.fillStyle = fur;
       if (seated) {
-        c.fillRect(-5, -4, 4, 5);
-        c.fillRect(1, -4, 4, 5);
+        limb(-5, -4, 4, 5);
+        limb(1, -4, 4, 5);
       } else {
-        c.fillRect(-5, -10, 4, 10 + step * 2);
-        c.fillRect(1, -10, 4, 10 - step * 2);
-        c.fillStyle = furDark; // back paws
-        c.fillRect(-5, -1.5 + step, 4, 2.5);
-        c.fillRect(1, -1.5 - step, 4, 2.5);
+        limb(-5, -10, 4, 10 + step * 2);
+        limb(1, -10, 4, 10 - step * 2);
       }
       const hip = seated ? -4 : -10;
-      this.roundRect(-7, hip - 13, 14, 14, 3, fur);
-      this.roundRect(-4, hip - 8, 8, 9, 3, br.belly); // chest and belly
-      if (br.stripes) {
-        c.fillStyle = furDark;
-        c.fillRect(-7, hip - 11.5, 3.2, 1.4);
-        c.fillRect(3.8, hip - 11.5, 3.2, 1.4);
-        c.fillRect(-7, hip - 7.5, 3.2, 1.4);
-        c.fillRect(3.8, hip - 7.5, 3.2, 1.4);
-      }
-      if (br.patches) {
-        c.fillStyle = '#e8913f'; c.fillRect(-7, hip - 13, 4.5, 5.5);
-        c.fillStyle = '#30303a'; c.fillRect(3.5, hip - 6.5, 3.5, 6.5);
-      }
-      const arm = this.shade(fur, -18);
-      const hand = (hx, hy) => { c.fillStyle = furDark; c.beginPath(); c.arc(hx, hy, 2.4, 0, Math.PI * 2); c.fill(); };
-      c.fillStyle = arm;
+      rrPath(-7, hip - 13, 14, 14, 5);
+      c.fillStyle = fur; c.fill(); pen(1.8); c.stroke();
+      const bodyClip = (fn) => {
+        c.save(); rrPath(-7, hip - 13, 14, 14, 5); c.clip(); fn(); c.restore();
+      };
+      bodyClip(() => {
+        c.fillStyle = br.belly;
+        c.beginPath(); c.ellipse(0, hip - 5.2, 3.7, 4.5, 0, 0, Math.PI * 2); c.fill();
+        if (br.stripes) {
+          c.fillStyle = furDark;
+          c.fillRect(-7, hip - 11.2, 2.8, 1.5);
+          c.fillRect(4.2, hip - 11.2, 2.8, 1.5);
+          c.fillRect(-7, hip - 7.4, 2.8, 1.5);
+          c.fillRect(4.2, hip - 7.4, 2.8, 1.5);
+        }
+        if (br.patches) {
+          c.fillStyle = '#e8913f'; c.fillRect(-7, hip - 13, 4.6, 5.4);
+          c.fillStyle = '#30303a'; c.fillRect(3.6, hip - 6.4, 3.4, 6.4);
+        }
+      });
+      const arm = this.shade(fur, -12);
+      const hand = (hx, hy) => {
+        c.beginPath(); c.arc(hx, hy, 2.4, 0, Math.PI * 2);
+        c.fillStyle = br.belly; c.fill(); pen(1.4); c.stroke();
+      };
       const sip = Math.sin(t * 0.9 + p.phase) > 0.6;
       switch (st.act) {
         case 'wave': {
           const wave = Math.sin(t * 8 + p.phase) * 2;
-          c.fillRect(6, hip - 26, 3, 14);
+          limb(6, hip - 26, 3, 14, arm);
           hand(7.5 + wave * 0.5, hip - 27);
-          c.fillStyle = arm; c.fillRect(-9, hip - 11, 3, 10);
+          limb(-9, hip - 11, 3, 10, arm);
           break;
         }
         case 'type': {
           const k1 = Math.sin(t * 18 + p.phase) > 0 ? 1 : 0;
-          c.fillRect(-9, hip - 11 - k1, 3, 8);
-          c.fillRect(6, hip - 11 - (1 - k1), 3, 8);
+          limb(-9, hip - 11 - k1, 3, 8, arm);
+          limb(6, hip - 11 - (1 - k1), 3, 8, arm);
           break;
         }
         case 'coffee':
         case 'water': {
-          c.fillRect(-9, hip - 11, 3, 10);
-          c.fillRect(6, sip ? hip - 15 : hip - 11, 3, sip ? 7 : 10);
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, sip ? hip - 15 : hip - 11, 3, sip ? 7 : 10, arm);
           const cupY = sip && front ? hip - 19 : hip - 4;
-          c.fillStyle = st.act === 'water' ? 'rgba(170,215,255,.95)' : '#fafafa';
-          c.fillRect(6, cupY, 5, 6);
-          if (st.act === 'coffee') { c.fillStyle = '#6b3f22'; c.fillRect(7, cupY, 3, 1.5); }
+          limb(6, cupY, 5, 6, st.act === 'water' ? 'rgba(170,215,255,.95)' : '#fafafa');
+          if (st.act === 'coffee') { c.fillStyle = '#6b3f22'; c.fillRect(7, cupY + 1, 3, 1.5); }
           break;
         }
         case 'read': {
-          c.fillRect(-8, hip - 11, 3, 7);
-          c.fillRect(5, hip - 11, 3, 7);
-          if (front) { c.fillStyle = pick(this.pal.book, p.h, 5); c.fillRect(-7, hip - 12, 14, 9); c.fillStyle = '#fff'; c.fillRect(-0.5, hip - 12, 1, 9); }
+          limb(-8, hip - 11, 3, 7, arm);
+          limb(5, hip - 11, 3, 7, arm);
+          if (front) {
+            limb(-7, hip - 12, 14, 9, pick(this.pal.book, p.h, 5));
+            c.fillStyle = '#fff'; c.fillRect(-0.5, hip - 11.2, 1, 7.4);
+          }
           break;
         }
         case 'whiteboard':
         case 'arcade': {
           const k = Math.sin(t * (st.act === 'arcade' ? 14 : 3) + p.phase);
-          c.fillRect(-9, hip - 11, 3, 10);
-          c.fillRect(6, hip - 20 + k * 2, 3, 12);
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, hip - 20 + k * 2, 3, 12, arm);
           hand(7.5, hip - 21 + k * 2);
           break;
         }
         case 'pingpong': {
-          c.fillRect(-9, hip - 11, 3, 10);
-          c.fillRect(6, hip - 14, 3, 9);
-          c.fillStyle = '#c0392b';
-          c.beginPath(); c.arc(10, hip - 16, 4, 0, Math.PI * 2); c.fill();
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(6, hip - 14, 3, 9, arm);
+          c.beginPath(); c.arc(10, hip - 16, 4, 0, Math.PI * 2);
+          c.fillStyle = '#c0392b'; c.fill(); pen(1.4); c.stroke();
           break;
         }
         case 'foosball': {
           const k1 = Math.sin(t * 16 + p.phase) * 1.5;
-          c.fillRect(-9, hip - 12 + k1, 3, 7);
-          c.fillRect(6, hip - 12 - k1, 3, 7);
+          limb(-9, hip - 12 + k1, 3, 7, arm);
+          limb(6, hip - 12 - k1, 3, 7, arm);
           break;
         }
         case 'phone': {
-          c.fillRect(-9, hip - 11, 3, 10);
-          c.fillRect(5, hip - 22, 3, 12);
-          c.fillStyle = '#222'; c.fillRect(5, hip - 25, 3, 6);
+          limb(-9, hip - 11, 3, 10, arm);
+          limb(5, hip - 22, 3, 12, arm);
+          limb(5, hip - 25, 3, 6, '#222');
           break;
         }
         case 'nap': {
-          c.fillRect(-9, hip - 13, 3, 6);
-          c.fillRect(6, hip - 13, 3, 6);
+          limb(-9, hip - 13, 3, 6, arm);
+          limb(6, hip - 13, 3, 6, arm);
           break;
         }
         default: {
           const sw = moving ? step * 2 : 0;
-          c.fillRect(-9, hip - 11 + sw, 3, 10);
-          c.fillRect(6, hip - 11 - sw, 3, 10);
+          limb(-9, hip - 11 + sw, 3, 10, arm);
+          limb(6, hip - 11 - sw, 3, 10, arm);
         }
       }
 
       const napping = st.act === 'nap';
       const hy = hip - 20 + (napping ? 7 : 0) + (st.act === 'think' ? Math.sin(t * 1.5 + p.phase) * 0.6 : 0);
-      // Ears go in before the head so their bases disappear under it. They flick
+      // Ears go in before the head so their bases disappear under it. They fold
       // back when the cat is asleep.
-      const earY = hy - 5.2;
-      const earDrop = napping ? 2.6 : 0;
-      const ear = (cx, lean) => {
+      const earY = hy - 6.4;
+      const drop = napping ? 2.8 : 0;
+      const ears = () => {
         c.beginPath();
-        c.moveTo(cx - 3.4, earY + 2);
-        c.lineTo(cx + lean, earY - 6.6 + earDrop);
-        c.lineTo(cx + 3.4, earY + 1.6);
-        c.closePath();
+        c.moveTo(-8.4, earY + 3.6); c.lineTo(-5.3, earY - 4.2 + drop); c.lineTo(-1.6, earY + 2.4); c.closePath();
+        c.moveTo(8.4, earY + 3.6); c.lineTo(5.3, earY - 4.2 + drop); c.lineTo(1.6, earY + 2.4); c.closePath();
       };
       c.fillStyle = br.mask ? br.dark : fur;
-      ear(-4.6, -1.2); c.fill();
-      ear(4.6, 1.2); c.fill();
+      ears(); c.fill(); pen(1.7); c.stroke();
       if (front) {
         c.fillStyle = br.ear;
-        const inner = (cx, lean) => {
-          c.beginPath();
-          c.moveTo(cx - 1.7, earY + 1.2);
-          c.lineTo(cx + lean * 0.6, earY - 3.4 + earDrop);
-          c.lineTo(cx + 1.7, earY + 1);
-          c.closePath();
-        };
-        inner(-4.6, -1.2); c.fill();
-        inner(4.6, 1.2); c.fill();
+        c.beginPath();
+        c.moveTo(-7.1, earY + 2.6); c.lineTo(-5.3, earY - 1.6 + drop); c.lineTo(-3.2, earY + 2); c.closePath();
+        c.moveTo(7.1, earY + 2.6); c.lineTo(5.3, earY - 1.6 + drop); c.lineTo(3.2, earY + 2); c.closePath();
+        c.fill();
       }
 
-      c.fillStyle = fur;
-      c.beginPath(); c.arc(0, hy, 7, 0, Math.PI * 2); c.fill();
-      // Cheek tufts, so the head reads as a cat even from behind.
-      c.beginPath(); c.moveTo(-6.6, hy + 0.5); c.lineTo(-8.8, hy + 2.6); c.lineTo(-5.6, hy + 3.4); c.closePath(); c.fill();
-      c.beginPath(); c.moveTo(6.6, hy + 0.5); c.lineTo(8.8, hy + 2.6); c.lineTo(5.6, hy + 3.4); c.closePath(); c.fill();
+      const headPath = () => { c.beginPath(); c.ellipse(0, hy, 9, 8.2, 0, 0, Math.PI * 2); };
+      headPath();
+      c.fillStyle = fur; c.fill(); pen(1.8); c.stroke();
+      const headClip = (fn) => { c.save(); headPath(); c.clip(); fn(); c.restore(); };
 
-      if (front) {
+      headClip(() => {
         if (br.mask) {
           c.fillStyle = br.dark;
-          c.beginPath(); c.ellipse(0, hy + 1.6, 5, 4.6, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(0, hy + 1.8, 5.4, 5, 0, 0, Math.PI * 2); c.fill();
         }
         if (br.stripes) {
           c.fillStyle = furDark;
-          c.fillRect(-4.6, hy - 6.4, 1.3, 3.2);
-          c.fillRect(-0.65, hy - 7, 1.3, 3.6);
-          c.fillRect(3.3, hy - 6.4, 1.3, 3.2);
+          c.fillRect(-4.8, hy - 8.2, 1.6, 4.2);
+          c.fillRect(-0.8, hy - 8.2, 1.6, 4.8);
+          c.fillRect(3.2, hy - 8.2, 1.6, 4.2);
         }
         if (br.patches) {
+          // Kept high on the head: a patch over an eye reads as an eyepatch.
           c.fillStyle = '#e8913f';
-          c.beginPath(); c.arc(-3.6, hy - 2.6, 3.4, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.arc(-5.4, hy - 5, 3.6, 0, Math.PI * 2); c.fill();
           c.fillStyle = '#30303a';
-          c.beginPath(); c.arc(4, hy - 3.4, 2.6, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.arc(5.4, hy - 5.4, 2.6, 0, Math.PI * 2); c.fill();
         }
+      });
 
+      if (front) {
         const sleepy = s.status === 'idle';
         const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
         const shut = blink || sleepy || napping;
         if (shut) {
-          c.strokeStyle = '#241c16'; c.lineWidth = 1;
-          c.beginPath(); c.arc(-2.5, hy - 0.6, 1.7, 0.12 * Math.PI, 0.88 * Math.PI); c.stroke();
-          c.beginPath(); c.arc(2.5, hy - 0.6, 1.7, 0.12 * Math.PI, 0.88 * Math.PI); c.stroke();
+          pen(1.3);
+          c.beginPath(); c.arc(-3.4, hy - 0.8, 1.9, 0.1 * Math.PI, 0.9 * Math.PI); c.stroke();
+          c.beginPath(); c.arc(3.4, hy - 0.8, 1.9, 0.1 * Math.PI, 0.9 * Math.PI); c.stroke();
         } else {
+          // Big sticker eyes: a dark almond, the breed colour low in it, one
+          // bright highlight. They open wider when something has gone wrong.
+          const wide = s.status === 'error' ? 1.16 : 1;
+          c.fillStyle = INK;
+          c.beginPath(); c.ellipse(-3.4, hy - 0.2, 2.3 * wide, 2.8 * wide, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(3.4, hy - 0.2, 2.3 * wide, 2.8 * wide, 0, 0, Math.PI * 2); c.fill();
           c.fillStyle = br.eye;
-          c.beginPath(); c.ellipse(-2.5, hy - 0.4, 1.9, 2.1, 0, 0, Math.PI * 2); c.fill();
-          c.beginPath(); c.ellipse(2.5, hy - 0.4, 1.9, 2.1, 0, 0, Math.PI * 2); c.fill();
-          // Slit pupils, wide when something is wrong.
-          const slit = s.status === 'error' ? 1.9 : 1;
-          c.fillStyle = '#17171b';
-          c.beginPath(); c.ellipse(-2.5, hy - 0.4, slit * 0.55, 2, 0, 0, Math.PI * 2); c.fill();
-          c.beginPath(); c.ellipse(2.5, hy - 0.4, slit * 0.55, 2, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(-3.4, hy + 0.7, 1.1, 1.2, 0, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.ellipse(3.4, hy + 0.7, 1.1, 1.2, 0, 0, Math.PI * 2); c.fill();
+          c.fillStyle = '#fff';
+          c.beginPath(); c.arc(-4.2, hy - 1.5, 1, 0, Math.PI * 2); c.fill();
+          c.beginPath(); c.arc(2.6, hy - 1.5, 1, 0, Math.PI * 2); c.fill();
         }
 
-        c.fillStyle = br.belly;
-        c.beginPath(); c.ellipse(0, hy + 3.6, 3.8, 2.5, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = 'rgba(240,145,138,.42)';
+        c.beginPath(); c.ellipse(-6.3, hy + 2.9, 2, 1.3, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(6.3, hy + 2.9, 2, 1.3, 0, 0, Math.PI * 2); c.fill();
+
         c.fillStyle = br.ear;
-        c.beginPath(); c.moveTo(-1.2, hy + 2.2); c.lineTo(1.2, hy + 2.2); c.lineTo(0, hy + 3.5); c.closePath(); c.fill();
-        c.strokeStyle = '#2a2018'; c.lineWidth = 0.8;
-        c.beginPath(); c.arc(-1, hy + 3.8, 1.1, 0, Math.PI * 0.85); c.stroke();
-        c.beginPath(); c.arc(1, hy + 3.8, 1.1, Math.PI * 0.15, Math.PI); c.stroke();
-
-        c.strokeStyle = br.whisk; c.lineWidth = 0.7;
-        for (const dy of [-0.6, 1.2]) {
-          c.beginPath(); c.moveTo(-4, hy + 3 + dy); c.lineTo(-9.6, hy + 1.8 + dy); c.stroke();
-          c.beginPath(); c.moveTo(4, hy + 3 + dy); c.lineTo(9.6, hy + 1.8 + dy); c.stroke();
-        }
-      } else if (br.stripes) {
-        c.fillStyle = furDark;
-        c.fillRect(-4.6, hy - 6.4, 1.3, 4.6);
-        c.fillRect(-0.65, hy - 7, 1.3, 5.2);
-        c.fillRect(3.3, hy - 6.4, 1.3, 4.6);
+        c.beginPath(); c.moveTo(-1.1, hy + 3.1); c.lineTo(1.1, hy + 3.1); c.lineTo(0, hy + 4.3); c.closePath(); c.fill();
+        c.strokeStyle = INK; c.lineWidth = 1; c.lineCap = 'round';
+        c.beginPath(); c.arc(-1.2, hy + 4.7, 1.3, 0, Math.PI * 0.86); c.stroke();
+        c.beginPath(); c.arc(1.2, hy + 4.7, 1.3, Math.PI * 0.14, Math.PI); c.stroke();
+        c.lineCap = 'butt';
       }
       if (st.act === 'arcade' || st.act === 'beanbag') {
         c.strokeStyle = '#222'; c.lineWidth = 2;
@@ -1448,7 +1460,7 @@
       }
       c.restore();
 
-      const headTop = y + (hy - 8) * sc;
+      const headTop = y + (hy - 11) * sc;
       this.hit.push({ key: p.key, x0: x - 13, x1: x + 13, y0: headTop - 22, y1: fb.y + 4 });
       return { x, y: headTop, act: st.act };
     }

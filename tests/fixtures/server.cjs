@@ -6,15 +6,6 @@ const path = require('node:path');
 assert.ok(process.argv[3], 'Run through tests/server.cjs with an isolated home');
 assert.equal(process.env.HOME, process.argv[3]);
 const { createServer } = require('../../src/server');
-const { USER_DIR } = require('../../src/scenes');
-
-const scene = path.join(USER_DIR, 'fixture');
-fs.mkdirSync(scene, { recursive: true });
-fs.writeFileSync(path.join(scene, 'manifest.json'), '{"name":"Fixture"}');
-fs.writeFileSync(path.join(scene, 'hello world.json'), '{"fixture":true}\n');
-fs.writeFileSync(path.join(scene, 'literal%name.json'), '{"percent":true}\n');
-fs.writeFileSync(path.join(scene, 'blocked.txt'), 'not an allowed HTTP MIME type');
-fs.writeFileSync(path.join(USER_DIR, 'outside.json'), '{"outside":true}');
 
 const watcher = new EventEmitter();
 watcher.sessions = () => [];
@@ -55,32 +46,25 @@ async function main() {
   await once(server, 'listening');
   try {
     const scenario = process.argv[2];
-    if (scenario === 'assets' || scenario === 'scenes') {
-      const prefixes = scenario === 'assets' ? ['/assets/'] : ['/scenes/', '/scenes/fixture/'];
+    if (scenario === 'assets') {
+      const prefixes = ['/assets/'];
       for (const prefix of prefixes) {
         for (const suffix of ['%', '%2', '%GG', '%E0%A4', '%FF']) {
           const url = prefix + suffix;
           assert.equal((await request(url)).status, 400, url);
           await ping();
-          if (scenario === 'assets') {
-            await resource('/assets/agents%2F%63laude.png', path.join(__dirname, '../../assets/agents/claude.png'), 'image/png');
-          } else {
-            await resource('/scenes/fixture/hello%20world.json', path.join(scene, 'hello world.json'), 'application/json');
-          }
+          await resource('/assets/agents%2F%63laude.png', path.join(__dirname, '../../assets/agents/claude.png'), 'image/png');
         }
       }
     } else {
       assert.equal(scenario, 'guards');
-      for (const url of ['/assets/%', '/scenes/%']) {
+      for (const url of ['/assets/%']) {
         assert.equal((await request(url, 'untrusted.example')).status, 403, url);
       }
       for (const host of ['localhost', '127.0.0.1', '[::1]']) await ping(host);
       for (const url of [
-        '/assets/%2e%2e%2fpackage.json', '/scenes/fixture/%2e%2e%2foutside.json',
-        '/scenes/%2e%2e%2ffixture/manifest.json', '/assets/agents/README.md',
-        '/scenes/fixture/blocked.txt', '/assets/missing.png', '/scenes/missing/manifest.json',
+        '/assets/%2e%2e%2fpackage.json', '/assets/agents/README.md', '/assets/missing.png',
       ]) assert.equal((await request(url)).status, 404, url);
-      await resource('/scenes/fixture/literal%25name.json', path.join(scene, 'literal%name.json'), 'application/json');
       await resource('/office.js', path.join(__dirname, '../../public/office.js'), 'text/javascript; charset=utf-8', 'no-store');
       await ping();
     }

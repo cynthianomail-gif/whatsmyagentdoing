@@ -10,14 +10,11 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/office.js': ['office.js', 'text/javascript; charset=utf-8'],
-  '/office3d.js': ['office3d.js', 'text/javascript; charset=utf-8'],
   '/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'],
   '/popout.js': ['popout.js', 'text/javascript; charset=utf-8'],
 };
-const TYPES = { '.js': 'text/javascript; charset=utf-8', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json' };
-// 3D models, served as-is (3D view only).
+const TYPES = { '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json' };
 const MOUNTS = { '/assets/': path.join(__dirname, '..', 'assets') };
-const scenes = require('./scenes');
 const updater = require('./update');
 const { ompResumeCommand } = require('./omp');
 const { dayKey } = require('./parsers');
@@ -29,7 +26,7 @@ function serveFile(res, root, rel) {
     res.writeHead(404).end();
     return;
   }
-  // no-cache: a reinstalled scene pack or an updated clone must show up on reload
+  // no-cache: an updated clone must show up on reload
   res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache' });
   fs.createReadStream(file).pipe(res);
 }
@@ -164,32 +161,6 @@ function createServer(watcher, opts, { onShutdown, onRestart } = {}) {
       try { rel = decodeURIComponent(url.pathname.slice(m.length)); }
       catch { res.writeHead(400).end(); return; }
       serveFile(res, MOUNTS[m], rel);
-    } else if (url.pathname.startsWith('/scenes/')) {
-      let rel;
-      try { rel = decodeURIComponent(url.pathname.slice('/scenes/'.length)); }
-      catch { res.writeHead(400).end(); return; }
-      const [id, ...rest] = rel.split('/');
-      const dir = scenes.sceneDir(id);
-      if (!dir) res.writeHead(404).end();
-      else serveFile(res, dir, rest.join('/'));
-    } else if (url.pathname === '/api/scenes') {
-      const cat = scenes.catalog();
-      const icon = (x) => x.icon || (cat.find((c) => c.id === x.id) || {}).icon || '🗺️';
-      const have = scenes.installed().map((x) => ({ ...x, icon: icon(x) }));
-      const ids = new Set(have.map((x) => x.id));
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({
-        installed: have.map(({ id, name, version, credits, icon }) => ({ id, name, version, credits, icon })),
-        available: cat.filter((x) => !ids.has(x.id)).map(({ id, name, version, size, credits, icon }) => ({ id, name, version, size, credits, icon: icon || '🗺️' })),
-      }));
-    } else if (url.pathname === '/api/scenes/install' && req.method === 'POST') {
-      // Same guard as shutdown: a custom header web pages can't send cross-site.
-      if (req.headers['x-whatsmyagentdoing'] !== 'install') { res.writeHead(403).end(); return; }
-      const id = url.searchParams.get('id') || '';
-      scenes.install(id).then(
-        (x) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, id: x.id })); },
-        (e) => { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: String(e.message || e) })); },
-      );
     } else if (url.pathname === '/api/transcript') {
       // --private hides prompts and replies everywhere, so it hides the conversation too.
       const key = url.searchParams.get('key') || '';

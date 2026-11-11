@@ -8,9 +8,7 @@
 
 OMP support: [paths, profiles, Resume and limitations](docs/omp.md).
 
-![The 3D office: agents at their desks, off-duty ones wandering around](docs/office-3d.gif)
-
-| Medium (2D) | List |
+| Office | List |
 |---|---|
 | ![2D office](docs/office-2d.gif) | ![List view](docs/list.gif) |
 
@@ -38,9 +36,7 @@ Needs Node.js 18+. Nothing to `npm install` — the repo runs as cloned. Prefer 
 
 It opens an isometric **office**. Agents that are working sit at cubicle desks: a thought bubble while thinking, typing with code scrolling on the monitor while a tool runs, standing up and waving when they need you. A handful of recently finished agents stay around off duty and wander: coffee and water in the pantry, the couch and beanbags, the bookshelf, the meeting-room whiteboard, the arcade cabinet, ping-pong and foosball (when two of them are free), the phone booth, or a nap at an empty desk. Everyone else has gone home. The windows follow your local time of day (and in Medium there's an office cat). Hover anyone to see what they're on.
 
-Two looks: **Medium** is a hand-drawn 2D canvas (zero dependencies). **High (3D)** renders the same office with real-time lighting and shadows using [Kenney](https://kenney.nl)'s CC0 *Mini Characters* (with their walk / sit / interact animations) and *Furniture Kit*; drag to rotate, scroll to zoom. The 3D bundle (three.js, ~180 KB gzipped) and models (~1.3 MB, meshopt-compressed) only load when you pick High.
-
-**Scenes (3D):** the office is built in; other scenes are small downloadable packs (Christmas Cabin, Neon Arcade, Haunted Hollow, Pirate Cove, Café, Space Station and Castle are about 100–290 KB each), fetched only when you pick one from the scene menu next to 2D/3D, run `--scene pirate`, or ask your agent for it. Packs are data only (a manifest plus Kenney CC0 models) and are checked against a pinned SHA-256 before they're installed into `~/.whatsmyagentdoing/scenes`.
+The office is a hand-drawn 2D canvas (zero dependencies).
 
 Each session updates in real time:
 
@@ -63,13 +59,13 @@ In the agent panel, sessions are grouped into **Needs you → Working → Finish
 
 **Layout:** the office fills the window, with the agents listed in a side panel grouped by Needs you → Working → Finished. Click an agent there, or a person in the office, to open its status, model, folder, usage, resume command and recent conversation — your messages, its replies and the tools it ran, read from the end of its own log (full text for Claude Code and Codex). The panel slides away with its arrow and comes back from the tab at the top right; on phones it starts folded away. With `--private` the conversation is never sent to the page.
 
-**Agent badges:** in both 2D and 3D, each provider's logo identifies its agents beside their names, including subagents. The same icons appear in the legend, list cards and filters. Open **Settings → Agent badges** to hide the office markers and legend; your choice is saved. Icons are bundled locally, with initials as a fallback if an image cannot load. See [icon sources and attribution](assets/agents/README.md).
+**Agent badges:** each provider's logo identifies its agents beside their names, including subagents. The same icons appear in the legend, list cards and filters. Open **Settings → Agent badges** to hide the office markers and legend; your choice is saved. Icons are bundled locally, with initials as a fallback if an image cannot load. See [icon sources and attribution](assets/agents/README.md).
 
-The toolbar keeps the view, 2D/3D and pop-out controls visible. Scene selection, agent filters, display options, notifications and language are grouped under **Settings**.
+The toolbar keeps the view and pop-out controls visible. Agent filters, display options, notifications and language are grouped under **Settings**.
 
-**Pop out:** browsers with the [Document Picture-in-Picture API](https://developer.chrome.com/docs/web-platform/document-picture-in-picture) can open the office or list in an interactive, always-on-top window. The compact list shows **Needs you** and **Working**. View, quality, scene, filters, language and badge settings stay in sync with the main tab when browser storage is available. Closing the pop-out restores the main view, and only the main tab sends notifications.
+**Pop out:** browsers with the [Document Picture-in-Picture API](https://developer.chrome.com/docs/web-platform/document-picture-in-picture) can open the office or list in an interactive, always-on-top window. The compact list shows **Needs you** and **Working**. View, filters, language and badge settings stay in sync with the main tab when browser storage is available. Closing the pop-out restores the main view, and only the main tab sends notifications.
 
-When Document PiP isn't available, **Pop out** in office view starts a local, view-only video preview of the 2D or 3D office. Use its video PiP button, or the browser's own video controls/context menu (such as Firefox's), to float it. Stop the preview when finished. No screen-sharing permission is needed and no video is uploaded. Background animation may run at a lower frame rate, depending on browser throttling; this fallback doesn't support list cards or clicking agents.
+When Document PiP isn't available, **Pop out** in office view starts a local, view-only video preview of the office. Use its video PiP button, or the browser's own video controls/context menu (such as Firefox's), to float it. Stop the preview when finished. No screen-sharing permission is needed and no video is uploaded. Background animation may run at a lower frame rate, depending on browser throttling; this fallback doesn't support list cards or clicking agents.
 
 Works with Claude Code (CLI, desktop, IDE), Codex (CLI, desktop, IDE), Gemini CLI, Antigravity CLI,
 Copilot CLI, OMP, Pi, Kimi Code, DeepSeek Harness (DSH), Grok Build, OpenCode and Hermes through their
@@ -88,8 +84,6 @@ store and isn't supported yet; its `agy` CLI is.)
 --demo            Show a made-up team instead of your sessions (screenshots, trying it out)
 --stop            Stop a running dashboard (or say /myoffice stop)
 --update          git pull the latest version and restart (or say /myoffice update)
---scenes          List 3D scenes, installed and downloadable
---scene <id>      Download a scene if needed and open the office in it
 --install-hook    Optional: add a Claude Code hook so permission prompts show "Waiting for you"
 --uninstall-hook  Remove that hook again
 ```
@@ -205,7 +199,7 @@ waits for one poll from each source and exits with an error if any fails.
 The web keys and sign-in cookies stay on the server and are never sent to the
 dashboard's browser.
 
-**Privacy:** nothing leaves your machine. The server binds to `127.0.0.1` only and rejects requests that aren't addressed to localhost. No runtime dependencies — read `src/` in five minutes. (`web/office3d.js` is the 3D source; `npm run build` bundles it with three.js into `public/office3d.js`.)
+**Privacy:** nothing leaves your machine. The server binds to `127.0.0.1` only and rejects requests that aren't addressed to localhost. No runtime dependencies — read `src/` in five minutes.
 
 ## Limits
 
@@ -233,8 +227,8 @@ parsing, subagents and discovery. `npm run test:hook` checks the optional
 approval hook (marker files, settings install and removal, path validation) and the usage counts behind
 the Today panel and context bars.
 
-Browser development checks require Node.js 20+ (the dashboard itself still runs on Node.js 18+). Run `npm install`, then `npm run build` to rebuild the committed 3D bundle. With Google Chrome installed, `npm run test:ui` runs the browser regression checks against a temporary local server and made-up sessions. Use `WMAD_HEADED=1 npm run test:ui` to see the test windows, or set `WMAD_SCREENSHOTS` to an output folder to save screenshots. The checks cover logo rendering, compact views, settings synchronization, notifications, PiP recovery, video-stream cleanup and responsive settings in light and dark themes. They use Chrome; Firefox and Safari's native video controls still need manual testing.
+Browser development checks require Node.js 20+ (the dashboard itself still runs on Node.js 18+). Run `npm install`. With Google Chrome installed, `npm run test:ui` runs the browser regression checks against a temporary local server and made-up sessions. Use `WMAD_HEADED=1 npm run test:ui` to see the test windows, or set `WMAD_SCREENSHOTS` to an output folder to save screenshots. The checks cover logo rendering, compact views, settings synchronization, notifications, PiP recovery, video-stream cleanup and responsive settings in light and dark themes. They use Chrome; Firefox and Safari's native video controls still need manual testing.
 
 ## License
 
-MIT. 3D models in `assets/kenney/` are by [Kenney](https://kenney.nl), released under CC0 (see the license files there).
+MIT.

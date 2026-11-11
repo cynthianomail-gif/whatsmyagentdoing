@@ -33,20 +33,6 @@ If the output also says **"Update available: vA → vB"**, tell the user a new
 version is out and offer to update it (`/myoffice update`, below).
 Requires Node.js 18+; if `node` is missing, say so and stop.
 
-## Scenes (3D)
-
-Besides the built-in office there are downloadable 3D scenes (e.g. a pirate
-cove). When the user asks for another scene, a different look, "DLC", or names
-one ("海盜船", "pirate"):
-
-1. `node "<base directory>/bin/cli.js" --scenes` — lists every scene, whether
-   it's installed, and its download size. Use the ids it prints; don't guess.
-2. `node "<base directory>/bin/cli.js" --scene <id>` (in the background) —
-   downloads it if needed (checksum-verified, data only) and opens the office
-   in that scene. `--scene office` goes back to the office.
-
-Scenes are only downloaded when asked for. `--remove-scene <id>` deletes one.
-
 Options the user may ask for:
 
 - `--private` — hide prompts/replies, show status only (for screen sharing)
