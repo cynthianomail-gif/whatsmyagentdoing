@@ -1470,6 +1470,11 @@
       const napping = st.act === 'nap';
       const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
       const eyes = (blink || sleepy || napping) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
+      // From here on one unit is one scene pixel. Without this the camera
+      // squeezes the 21x24 sprite into about 5x6 buffer pixels and the face
+      // is destroyed: eyes, ears and nose all land on the same cell.
+      const S = PIXEL / Math.max(0.0001, this.cam.zoom);
+      c.scale(S, S);
       const sprite = catSprite(br, seated, front, eyes);
       const smooth = c.imageSmoothingEnabled;
       c.imageSmoothingEnabled = false;
@@ -1549,8 +1554,9 @@
       }
       c.restore();
 
-      const headTop = y + (hy - 11) * sc;
-      this.hit.push({ key: p.key, x0: x - 13, x1: x + 13, y0: headTop - 22, y1: fb.y + 4 });
+      const headTop = y + (hy - 3) * sc * (PIXEL / Math.max(0.0001, this.cam.zoom));
+      const half = 11 * sc * (PIXEL / Math.max(0.0001, this.cam.zoom));
+      this.hit.push({ key: p.key, x0: x - half, x1: x + half, y0: headTop - 10, y1: fb.y + 4 });
       return { x, y: headTop, act: st.act };
     }
 
