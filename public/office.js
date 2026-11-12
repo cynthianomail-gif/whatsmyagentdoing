@@ -366,6 +366,7 @@
     }
     if (act === 'treadmill' && s.today && s.today.tokens) return { text: '🔥 ' + fmtTok(s.today.tokens), color: '#3b8ee0' };
     if (act === 'wheel' && s.today && s.today.turns) return { text: '↻ ' + s.today.turns, color: '#8b6be6' };
+    if (act === 'cut' && s.today && s.today.turns) return { text: '🎋 ' + s.today.turns, color: '#5f9a4c' };
     return null;
   }
 
@@ -2884,6 +2885,31 @@
           }
           break;
         }
+        case 'cut': {
+          // The sword goes up, waits, and comes down through the bamboo
+          // beside it. bambooTarget() keeps the same time.
+          const k = (((t * 0.5 + p.phase) % 1) + 1) % 1;
+          const steel = '#dfe6ee', hilt = '#3a2a1e';
+          if (k < 0.5) {
+            // raised: both paws at the hilt, the blade straight up
+            const lift = k > 0.4 ? 1 : 0;
+            paw(4, top - 3 - lift); paw(6, top - 5 - lift);
+            c.fillStyle = INK; c.fillRect(6, top - 20 - lift, 3, 16);
+            c.fillStyle = steel; c.fillRect(7, top - 19 - lift, 1, 12);
+            c.fillStyle = hilt; c.fillRect(7, top - 7 - lift, 1, 3);
+            c.fillStyle = '#e8cf8a'; c.fillRect(6, top - 8 - lift, 3, 1);
+          } else {
+            // down and across: the blade out to the right, tip low
+            paw(5, top + 1); paw(7, top + 2);
+            for (let i = 0; i < 12; i++) {
+              const bx = 9 + i, by = top + 2 + Math.round(i * 0.55);
+              c.fillStyle = INK; c.fillRect(bx, by - 1, 1, 3);
+              c.fillStyle = i < 2 ? hilt : steel; c.fillRect(bx, by, 1, 1);
+            }
+            c.fillStyle = '#e8cf8a'; c.fillRect(11, top + 2, 1, 3);
+          }
+          break;
+        }
         case 'fall': {
           paw(-1, top + 3);
           break;
@@ -3421,7 +3447,7 @@
           pot: '#2b3f52',
         },
       },
-      emoji: { arcade: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
+      emoji: { cut: '⚔️', arcade: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
 
       buildPlan(nWorking) {
         const COLS = 4;
@@ -3459,7 +3485,7 @@
         add(0.45 + HD - 0.45, () => this.plant(0.45, HD - 0.45), true);
         solid(0.25, HD - 0.65, 0.4, 0.4);
 
-        // ---- the garden: a veranda, a fall, a pond, a wheel in the stream
+        // ---- the garden: a veranda, a fall, a pond
         const fx = HW + 4.0;
         const stone = { x0: fx - 0.6, x1: fx + 0.6, y0: 1.4, y1: 2.2 };
         const pond = { x0: HW + 2.3, x1: W - 0.5, y0: 2.45, y1: GD - 1.5 };
@@ -3474,13 +3500,7 @@
           poi(sx, sy, 'sun', 'front', { sit: 0.06, sleepy: true });
         }
         poi(HW + 1.7, 3.5, 'window', 'front', { emoji: '🐟' });
-        {
-          const cx = HW + 2.25, wy = GD - 0.9;
-          const q = poi(cx, wy + 0.18, 'wheel', 'front', { z: 0.14 });
-          add(cx + wy - 0.02, () => this.catWheel(cx, wy, q, false), () => !!this.userOf(q));
-          add(cx + wy + 0.6, () => this.catWheel(cx, wy, q, true));
-          solid(cx - 1.05, wy, 2.1, 0.36, 0.05);
-        }
+        poi(HW + 1.6, GD - 0.8, 'window', 'front', { emoji: '🍃' });
         add(W - 0.9 + 1.75, () => this.lantern(W - 0.9, 1.75));
         solid(W - 1.15, 1.5, 0.5, 0.5, 0.02);
         for (const [bx, by] of [[W - 0.6, 0.5], [HW + 1.5, 0.45]]) {
@@ -3523,27 +3543,22 @@
           poi(bx + 0.4, by + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
         }
 
-        // ---- the yard: a dummy, the bar, a log to run on, a board game
+        // ---- the yard: a dummy, three stands of green bamboo to cut, a board game
         {
           const ax = GX + 0.5, ay = HD + 0.4;
           add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
           solid(ax + 0.1, ay + 0.1, 0.5, 0.5, 0.02);
           poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
         }
-        {
-          const lx = GX + 2.1, ly = HD + 0.5;
-          const q = poi(lx + 0.7, ly + 0.8, 'lift', 'front', { z: 0.05 });
-          add(lx + 0.7 + ly + 0.1, () => this.liftRack(lx, ly, q), () => !!this.userOf(q));
-          solid(lx + 0.1, ly, 1.2, 0.15, 0.03);
+        for (let k = 0; k < 3; k++) {
+          const [bx, by] = [[GX + 2.3, HD + 0.8], [GX + 4.3, HD + 1.2], [GX + 3.0, HD + 2.5]][k];
+          // the cat stands to the left of its bamboo, facing the room
+          const q = poi(bx - 0.62, by + 0.02, 'cut', 'front');
+          add(bx + by + 0.02, () => this.bambooTarget(bx, by, q), () => !!this.userOf(q));
+          solid(bx - 0.15, by - 0.15, 0.3, 0.3, 0.02);
         }
-        {
-          const tx = GX + 4.4, ty = HD + 0.5;
-          const q = poi(tx + 0.35, ty + 0.85, 'treadmill', 'front', { z: 0.34 });
-          add(tx + 0.35 + ty + 0.6, () => this.treadmill(tx, ty, q), () => !!this.userOf(q));
-          solid(tx, ty, 0.7, 1.5, 0.05);
-        }
-        add(GX + 5.45 + 0.5 + HD + 2.4, () => this.dumbbells(GX + 5.45, HD + 2.4));
-        solid(GX + 5.45, HD + 2.4, 1.0, 0.3, 0.04);
+        add(GX + 0.9 + D - 1.2, () => this.bambooPile(GX + 0.5, D - 1.4));
+        solid(GX + 0.5, D - 1.4, 0.9, 0.5, 0.03);
         {
           const gx = GX + 4.2, gy = D - 1.3;
           add(gx + 0.8 + gy + 0.4, () => this.foosball(gx, gy));
@@ -3551,11 +3566,7 @@
           poi(gx - 0.2, gy + 0.4, 'foosball', 'side', { pair: 'fb' });
           poi(gx + 1.8, gy + 0.4, 'foosball', 'side', { pair: 'fb' });
         }
-        const mats = [
-          { x: GX + 0.4, y: D - 1.6, w: 1.3, d: 0.6 },
-          { x: GX + 2.0, y: D - 1.6, w: 1.3, d: 0.6 },
-        ];
-        for (const mt of mats) poi(mt.x + mt.w / 2, mt.y + mt.d / 2, 'yoga', 'front');
+        const mats = [];
 
         // ---- the way in: whoever is waiting for the user stands here
         const dy = D - 1.2;
@@ -3628,7 +3639,7 @@
           }
         }
 
-        // the yard: packed earth, and two mats to drill on
+        // the yard: packed earth
         const earth = pal.dark ? '#4a4032' : '#d2ba92';
         rect(GX, HD, HW, D, earth);
         fleck(GX, HD, HW, D, this.tint(earth, 10), this.tint(earth, -14), 5, 11, 23);
@@ -3967,28 +3978,56 @@
           c.fillStyle = '#d9b27a'; c.fillRect(2, 0, 7, 1);
         });
       },
-      // a log on two trestles, to run on
-      treadmill(x, y, q) {
+      // A stand of green bamboo to cut. With nobody at it, it just stands.
+      // With someone, it keeps time with their sword: the top comes away on
+      // the stroke, slides off along the cut and drops, and a fresh one is up
+      // before the next.
+      bambooTarget(x, y, q) {
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
-        const wood = pal.dark ? '#7a5a3a' : '#b98a58', dk = this.tint(wood, -22), lt = this.tint(wood, 16);
-        for (const yy of [y + 0.05, y + 1.3]) this.box(x + 0.05, yy, 0, 0.6, 0.15, 0.14, pal.deskTop, pal.deskL, pal.deskR);
-        this.box(x + 0.12, y, 0.14, 0.46, 1.5, 0.2, lt, wood, dk);
-        const turn = this.userOf(q) ? Math.floor(this.t / 120) % 2 : 0;
-        this.art(P(x + 0.35, y + 1.5, 0.24), (c) => {
-          pxRing(c, 0, 0, 2, 2, dk);
-          c.fillStyle = dk; c.fillRect(turn ? -1 : 0, turn ? 0 : -1, 1, 1);
+        const g = pal.dark ? ['#3f6a3a', '#56864a'] : ['#5f9a4c', '#86bd62'];
+        const p = this.userOf(q);
+        const k = p ? (((this.t / 1000) * 0.5 + p.phase) % 1 + 1) % 1 : 0;
+        this.box(x - 0.16, y - 0.16, 0, 0.32, 0.32, 0.1, pal.deskTop, pal.deskL, pal.deskR);
+        this.art(P(x, y, 0.1), (c) => {
+          const H = 27, CUT = 13;                 // whole height, and where the blade goes through
+          const pole = (y0, y1) => {
+            c.fillStyle = INK_HEX; c.fillRect(-2, y0 - 1, 5, y1 - y0 + 2);
+            c.fillStyle = g[0]; c.fillRect(-1, y0, 3, y1 - y0);
+            c.fillStyle = g[1]; c.fillRect(-1, y0, 1, y1 - y0);
+            c.fillStyle = INK_HEX;
+            for (let n = -6; n > -H; n -= 7) if (n > y0 && n < y1) c.fillRect(-1, n, 3, 1);
+          };
+          if (!p || k < 0.5) { pole(-H, 0); return; }
+          // the stump, with its fresh pale face
+          pole(-CUT, 0);
+          c.fillStyle = '#e6edc4'; c.fillRect(-1, -CUT, 3, 1);
+          // the top, on its way down
+          const f = (k - 0.5) / 0.5;
+          if (f < 0.85) {
+            const dx = Math.round(f * 7), dy = Math.round(f * f * 16);
+            c.save();
+            c.translate(dx, dy);
+            c.globalAlpha = f < 0.6 ? 1 : (0.85 - f) / 0.25;
+            pole(-H, -CUT - 1);
+            c.restore();
+          }
+          // the stroke itself: a white line across, for an instant
+          if (f < 0.12) { c.fillStyle = '#ffffff'; for (let i = -5; i <= 5; i++) c.fillRect(i, -CUT - Math.round(i * 0.6), 1, 1); }
         });
       },
-      // stone locks, small to large
-      dumbbells(x, y) {
-        const st = this.pal.dark ? '#5a5a56' : '#a9a9a2';
-        for (let k = 0; k < 3; k++) {
-          const s = 0.2 + k * 0.04;
-          this.box(x + k * 0.34, y, 0, s, s, s, this.tint(st, 16), st, this.tint(st, -18));
-          this.art(this.iso(x + k * 0.34 + s / 2, y + s / 2, s), (c) => {
-            c.fillStyle = INK_HEX; c.fillRect(-2, -3, 4, 1); c.fillRect(-2, -2, 1, 2); c.fillRect(1, -2, 1, 2);
-          });
-        }
+      // what is left afterwards, stacked
+      bambooPile(x, y) {
+        const g = this.pal.dark ? ['#3f6a3a', '#56864a'] : ['#5f9a4c', '#86bd62'];
+        this.art(this.iso(x + 0.45, y + 0.3, 0), (c) => {
+          pxDisc(c, 0, 0, 8, 2, this.pal.shadow);
+          for (const [bx, by, w] of [[-8, -3, 15], [-7, -6, 14], [-5, -9, 12], [-3, -12, 9]]) {
+            c.fillStyle = INK_HEX; c.fillRect(bx - 1, by - 1, w + 2, 4);
+            c.fillStyle = g[0]; c.fillRect(bx, by, w, 2);
+            c.fillStyle = g[1]; c.fillRect(bx, by, w, 1);
+            c.fillStyle = '#e6edc4'; c.fillRect(bx + w - 1, by, 1, 2);
+            c.fillStyle = INK_HEX; c.fillRect(bx + 4, by, 1, 2); if (w > 10) c.fillRect(bx + 9, by, 1, 2);
+          }
+        });
       },
       // a board game on a low table
       foosball(x, y) {
