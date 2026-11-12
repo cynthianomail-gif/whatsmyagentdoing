@@ -363,8 +363,8 @@
   // context is, how many tokens it has used today, how many turns it has
   // taken. Every scene has a place for each. The office lifts, runs and
   // spins; a scene says the same three things in its own way.
-  const STAT_OF = { lift: 'ctx', treadmill: 'tok', wheel: 'turns', fall: 'ctx', dummy: 'tok', cut: 'turns' };
-  const TURN_ICON = { cut: '🎋 ' };
+  const STAT_OF = { lift: 'ctx', treadmill: 'tok', wheel: 'turns', fall: 'ctx', dummy: 'tok', cut: 'turns', chips: 'ctx', spin: 'turns' };
+  const TURN_ICON = { cut: '🎋 ', spin: '🎡 ' };
   const cutRate = (s) => 0.34 + turnTier(s) * 0.07;   // strokes a second at the bamboo
 
   function gymStat(act, s) {
@@ -2934,6 +2934,40 @@
           if (k) { paw(-9, top - 2); paw(5, top + 3); } else { paw(-7, top + 3); paw(7, top - 2); }
           break;
         }
+        case 'lever': {
+          // one paw up to the lever, down, and up again
+          const k = Math.sin(t * 4 + p.phase) > 0.3 ? 5 : 0;
+          paw(7, top - 5 + k);
+          paw(-8, top + 2);
+          break;
+        }
+        case 'chips': {
+          // A tray of chips held out to one side. The stack is its context:
+          // the fuller, the taller, green through to red, and near the limit
+          // it leans one way and then the other.
+          const pct = ctxPct(s);
+          const n = !(s.context && s.context.used) ? 1 : 1 + Math.round(pct * 8);
+          const heavy = pct >= 0.85;
+          const sway = heavy ? Math.sin(t * 5) * 2.4 : 0;
+          const ty = top + 2;
+          const col = ['#5f9a4c', '#3b8ee0', '#e0a83a', '#de4b40'][pct >= 0.75 ? 3 : pct >= 0.5 ? 2 : pct >= 0.25 ? 1 : 0];
+          prop(5, ty, 9, 1, '#c9a24c');
+          for (let i = 0; i < n; i++) {
+            const lean = pxFloor(sway * (i / Math.max(1, n - 1)));
+            c.fillStyle = INK; c.fillRect(6 + lean, ty - 3 - i * 2, 7, 3);
+            c.fillStyle = i % 2 ? '#f4f1ea' : col; c.fillRect(7 + lean, ty - 2 - i * 2, 5, 1);
+          }
+          paw(4, ty + 1); paw(12, ty + 1);
+          if (heavy && Math.sin(t * 6) > 0) { c.fillStyle = '#7fc4ff'; c.fillRect(-9, -PXH + 5, 1, 2); }
+          break;
+        }
+        case 'spin': {
+          // a paw up to the rim of the wheel and down: faster the more turns today
+          const k = Math.sin(t * (2 + turnTier(s) * 1.2) + p.phase) > 0;
+          paw(8, top - 7 + (k ? 6 : 0));
+          paw(-7, top + 3);
+          break;
+        }
         case 'kit:yarn': {
           const k = Math.sin(t * 5 + p.phase) > 0 ? 0 : 1;
           const bx = 7 + k;
@@ -4082,6 +4116,429 @@
             pxDisc(c, 0, top, 6, 1, '#efe2c4');
           }
         });
+      },
+    },
+
+    // A hall of slot machines. A cat at work sits at its own machine: the
+    // reels turn while it thinks, it pulls the lever while a tool runs, and
+    // they stop one by one while it writes its reply. When it finishes, the
+    // machine pays out. Off duty there is a bar, a lounge, and three games
+    // that say the three numbers: a tray of chips from the cashier is the
+    // context, the coin pusher is the day's tokens, the big wheel its turns.
+    slots: {
+      palette: {
+        light: {
+          wood1: '#6f4f3d', wood2: '#674837', woodLine: 'rgba(0,0,0,.18)',
+          tileA: '#efeadf', tileB: '#34323c', carpet: '#8e2f3f', carpetLine: 'rgba(0,0,0,.05)',
+          wallL: '#4d3d70', wallR: '#413364', wallTop: '#c9a24c', trim: '#c9a24c',
+          deskTop: '#3d3655', deskL: '#2e2944', deskR: '#252037',
+          chair: '#b8323a', rug: '#33406a', rugEdge: '#c9a24c', couch: '#8e2f3f', couchD: '#7a2636',
+          counter: '#34323c', counterL: '#6a4632', counterR: '#573827', metal: '#c9a24c',
+          glass: 'rgba(190,220,255,.2)', glassEdge: '#c9a24c', mat: '#33406a', pot: '#c9a24c',
+        },
+        dark: {
+          wood1: '#3a2a22', wood2: '#35261f', woodLine: 'rgba(0,0,0,.28)',
+          tileA: '#8f8b84', tileB: '#1f1e25', carpet: '#5a1f2a', carpetLine: 'rgba(255,255,255,.04)',
+          wallL: '#2c2444', wallR: '#251e3a', wallTop: '#8a6f33', trim: '#8a6f33',
+          deskTop: '#2a2540', deskL: '#201c32', deskR: '#191628',
+          chair: '#8a262c', rug: '#232c4a', rugEdge: '#8a6f33', couch: '#5a1f2a', couchD: '#4a1822',
+          counter: '#1f1e25', counterL: '#473022', counterR: '#3a271c', metal: '#8a6f33',
+          glass: 'rgba(160,190,230,.14)', glassEdge: '#8a6f33', mat: '#232c4a', pot: '#8a6f33',
+        },
+      },
+      emoji: { dummy: '🪙', spin: '🎡', chips: '💰', stool: '🍹', coffee: '🍸', couch: '💬', beanbag: '💤', vending: '🥤', arcade: '🎮' },
+
+      buildPlan(nWorking) {
+        const pal = this.pal;
+        const COLS = 4;
+        const rows = Math.max(2, Math.ceil((nWorking + 2) / COLS));
+        const SX0 = 3.5, SX1 = 12.1;             // the carpet the machines stand on
+        const SY1 = 0.9 + rows * 2.5 + 0.1;
+        const FY = SY1 + 0.3;                     // in front of it: the games
+        const RX = 12.5;                          // to the right: bar, then lounge
+        const W = 17.2, D = FY + 4.3;
+        const grid = new Grid(W, D);
+        const items = [], pois = [], desks = [];
+        const add = (depth, draw, live = false, state = null) => items.push({ depth, draw, live, state });
+        const solid = (x, y, w, d, pad) => grid.block(x, y, w, d, pad);
+        const poi = (x, y, act, face, opt = {}) => { pois.push({ x, y, act, face, sit: 0, ...opt }); return pois[pois.length - 1]; };
+
+        // ---- the machines: rows facing the room, each cat on a stool with
+        // its back to us. Every other row is shifted half a place, so no
+        // machine stands in front of the cat behind it.
+        for (let r = 0; r < rows; r++) {
+          for (let k = 0; k < COLS; k++) {
+            const x = 3.8 + k * 1.95 + (r % 2) * 0.95, y = 0.9 + r * 2.5;
+            desks.push({ x, y, side: 's', seat: { x: x + 0.7, y: y + 1.1 } });
+            solid(x + 0.25, y + 0.1, 0.9, 0.6, 0.05);
+          }
+        }
+        const windows = [4.0, 10.3];
+
+        // ---- left: the cashier, a drinks machine, the way in
+        add(0.9 + 1.1 + 0.3 + 0.35, () => this.cashier(0.9, 0.3));
+        solid(0.9, 0.3, 2.2, 0.7, 0.03);
+        poi(2.0, 1.75, 'chips', 'front');
+        const vy = FY + 0.1;
+        add(0.5 + vy + 0.4, () => this.vending(0.12, vy, '#2f6fb0'));
+        add(0.5 + vy + 0.41, () => this.vendingLight(0.12, vy), true);
+        solid(0.1, vy, 0.75, 0.75);
+        poi(1.3, vy + 0.4, 'vending', 'back');
+        const dy = D - 1.2;
+        const wait = {
+          x0: 0.95, x1: 3.3, y0: dy - 0.8, y1: dy + 1.0,
+          spots: [{ x: 1.4, y: dy - 1.45, act: 'scratch' }],
+        };
+        for (const yy of [dy + 0.5, dy - 0.35]) for (const xx of [1.45, 2.2, 2.95]) wait.spots.push({ x: xx, y: yy });
+        add(0.45 + dy - 1.35 + 0.1, () => this.scratchPost(0.45, dy - 1.35), false, () => this.scratch || 0);
+        solid(0.2, dy - 1.6, 0.5, 0.5, 0.03);
+
+        // ---- front: the wheel, the coin pusher, a cabinet, table football
+        {
+          const wx = 5.1, wy = FY + 1.0;
+          const q = poi(wx - 0.8, wy + 0.05, 'spin', 'front');
+          add(wx + wy + 0.02, () => this.luckyWheel(wx, wy, q), () => !!this.userOf(q));
+          solid(wx - 0.3, wy - 0.2, 0.6, 0.4, 0.02);
+        }
+        {
+          const px = 7.3, py = FY + 0.7;
+          const q = poi(px - 0.45, py + 0.55, 'dummy', 'front');
+          add(px + 0.6 + py + 0.4, () => this.pusher(px, py, q), () => !!this.userOf(q));
+          solid(px, py, 1.2, 0.8, 0.03);
+        }
+        {
+          const ax = 10.4, ay = FY + 0.5;
+          add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
+          add(ax + 0.35 + ay + 0.36, () => this.arcadeScreen(ax, ay), true);
+          solid(ax, ay, 0.7, 0.7);
+          poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
+        }
+        {
+          const fx = 6.0, fy = D - 1.3;
+          add(fx + 0.8 + fy + 0.4, () => this.foosball(fx, fy));
+          add(fx + 0.8 + fy + 0.41, () => this.foosRods(fx, fy), true);
+          solid(fx, fy, 1.6, 0.8, 0.05);
+          poi(fx - 0.45, fy + 0.4, 'foosball', 'side', { pair: 'fb' });
+          poi(fx + 2.05, fy + 0.4, 'foosball', 'side', { pair: 'fb' });
+        }
+
+        // ---- right, at the back: the bar
+        const bx0 = RX + 0.6, by = 1.5;
+        for (let x = bx0; x < W - 0.75; x += 0.85) {
+          const w = Math.min(0.85, W - 0.7 - x);
+          add(x + w / 2 + by + 0.3 - 0.5, () => this.box(x, by, 0, w, 0.6, 1.0, pal.counter, pal.counterL, pal.counterR));
+        }
+        add(bx0 + 1.7 + by + 0.3, () => this.barTop(bx0, by, W - 0.7 - bx0));
+        solid(bx0, by, W - 0.7 - bx0, 0.6);
+        for (let k = 0; k < 3; k++) {
+          const sx = bx0 + 0.6 + k * 1.05, sy = by + 1.05;
+          add(sx + sy - 0.02, () => this.stool(sx, sy, 0.45, '#c9a24c'));
+          poi(sx, sy, 'stool', 'back', { sit: 0.47 });
+        }
+        poi(bx0 + 1.7, by - 0.55, 'coffee', 'front');
+
+        // ---- right, in front: the lounge
+        const lx = RX + 0.4, ly = 4.3;
+        add(lx + ly + 0.6, () => this.couch(lx, ly + 0.6));
+        solid(lx, ly + 0.6, 2.8, 0.8);
+        for (let k = 0; k < 3; k++) poi(lx + 0.5 + k * 0.9, ly + 1.2, 'couch', 'front', { sit: 0.36 });
+        add(lx + 1.4 + ly + 2.35, () => this.coffeeTable(lx + 0.6, ly + 2.0));
+        solid(lx + 0.6, ly + 2.0, 1.6, 0.7);
+        const rtx = W - 2.3, rty = D - 2.3;
+        add(rtx + rty, () => this.roundTable(rtx, rty));
+        solid(rtx - 0.45, rty - 0.45, 0.9, 0.9);
+        for (const [sx, sy, face] of [[rtx - 1.0, rty, 'front'], [rtx + 1.0, rty, 'front'], [rtx, rty + 1.0, 'back']]) {
+          add(sx + sy - 0.02, () => this.stool(sx, sy, 0.45, '#b8323a'));
+          poi(sx, sy, 'stool', face, { sit: 0.47, emoji: '🃏' });
+        }
+        add(RX + 0.6 + D - 0.9, () => this.beanbag(RX + 0.6, D - 0.9, '#c9a24c'));
+        poi(RX + 0.6, D - 0.9, 'beanbag', 'front', { sit: 0.18 });
+        {
+          const cx = W - 1.3, cy = 4.6;
+          add(cx + cy + 0.2, () => this.cardboard(cx, cy, false));
+          add(cx + cy + 1.3, () => this.cardboard(cx, cy, true));
+          solid(cx, cy, 0.8, 0.7, 0.02);
+          poi(cx + 0.4, cy + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
+        }
+        for (const [sx, sy] of [[RX + 1.9, D - 0.8], [W - 0.7, 6.6]]) {
+          add(sx + sy - 0.3, () => this.cushion(sx, sy));
+          poi(sx, sy, 'sun', 'front', { sit: 0.06, sleepy: true });
+        }
+        add(W - 0.5 + D - 0.5, () => this.plant(W - 0.5, D - 0.5), true);
+        solid(W - 0.7, D - 0.7, 0.4, 0.4);
+        add(0.45 + 0.45, () => this.plant(0.45, 0.45), true);
+        solid(0.25, 0.25, 0.4, 0.4);
+
+        const posters = [{ y: 2.2, w: 3.8, color: '#f2c230', ink: '#3b2a12', text: 'WANIN' }];
+        return {
+          W, D, OW: SX1, OD: SY1, MR: 3.4, PY: FY, RW: W - RX, SX0, SX1, SY1, FY, RX, lx, ly,
+          grid, items, props: [], pois, desks, windows, posters, pp: null, gym: null, mats: [], wait,
+          door: { x: 0.4, y: D - 1.2 },
+        };
+      },
+
+      paintFloor({ P, dot, STEP, planks }) {
+        const pal = this.pal, { W, D, SX0, SX1, SY1, FY, RX, lx, ly } = this.plan;
+        const rect = (x0, y0, x1, y1, fill, stroke) => this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], fill, stroke);
+        const gold = pal.trim;
+        planks(0, W, 0, D, 17);
+
+        // the machines' carpet: crimson, a gold diamond in every tile
+        rect(SX0, 0.35, SX1, SY1, pal.carpet);
+        {
+          const lt = this.tint(pal.carpet, 12), dk = this.tint(pal.carpet, -14);
+          for (let y = 0.85; y < SY1; y += 1) {
+            for (let x = SX0 + 0.5; x < SX1; x += 1) {
+              this.poly([P(x - 0.24, y), P(x, y - 0.24), P(x + 0.24, y), P(x, y + 0.24)], null, gold);
+              dot(P(x, y), lt); dot(P(x - 0.5, y - 0.5), dk); dot(P(x - 0.5, y - 0.5), dk, 1, 0);
+            }
+          }
+          rect(SX0, 0.35, SX1, SY1, null, gold);
+          rect(SX0 + 0.12, 0.47, SX1 - 0.12, SY1 - 0.12, null, this.tint(pal.carpet, -26));
+        }
+
+        // the games' carpet: night blue, a scatter of stars
+        const night = pal.dark ? '#1d2440' : '#2b3566';
+        rect(SX0, FY, SX1, D - 0.15, night, gold);
+        {
+          let i = 0;
+          for (let y = FY + 0.3; y < D - 0.3; y += 0.45, i++) {
+            for (let x = SX0 + 0.3 + (i % 2) * 0.35; x < SX1 - 0.2; x += 0.9) {
+              const p = P(x, y), big = (Math.round(x * 3 + y * 5)) % 3 === 0;
+              dot(p, '#f2c230');
+              if (big) { dot(p, '#f2c230', 1, 0); dot(p, '#f2c230', -1, 0); dot(p, '#f2c230', 0, 1); dot(p, '#f2c230', 0, -1); }
+            }
+          }
+        }
+
+        // the bar: black and white squares
+        for (let i = 0; i < Math.ceil((W - RX) * 2); i++) {
+          for (let j = 0; j < 7; j++) {
+            const x = RX + i / 2, y = j / 2;
+            const x1 = Math.min(W, x + 0.5), y1 = y + 0.5;
+            const base = (i + j) % 2 ? pal.tileA : pal.tileB;
+            rect(x, y, x1, y1, base);
+            this.seg(P(x, y), P(x1, y), this.tint(base, 12), 0, 1);
+          }
+        }
+        rect(RX, 0, W, 3.5, null, gold);
+
+        // the lounge: a rug with a gold border
+        {
+          const x0 = lx - 0.2, x1 = lx + 3.4, y0 = ly + 0.3, y1 = ly + 3.2;
+          rect(x0, y0, x1, y1, pal.rugEdge);
+          rect(x0 + 0.12, y0 + 0.12, x1 - 0.12, y1 - 0.12, pal.rug);
+          rect(x0 + 0.3, y0 + 0.3, x1 - 0.3, y1 - 0.3, null, this.tint(pal.rug, pal.dark ? 14 : 18));
+        }
+      },
+
+      // A row of bulbs along the top of both walls, and bottles behind the bar.
+      sceneWalls({ P }) {
+        const pal = this.pal, { W, D, RX } = this.plan;
+        const bulb = (p, on) => this.art(p, (c) => {
+          c.fillStyle = on ? '#fff3b0' : '#f2c230'; c.fillRect(0, 0, 2, 2);
+          if (on) { c.fillStyle = '#ffffff'; c.fillRect(0, 0, 1, 1); }
+        });
+        let k = 0;
+        for (let u = 0.3; u < W - 0.1; u += 0.5, k++) bulb(P(u, 0, 2.28), k % 2 === 0);
+        for (let v = 0.3; v < D - 0.1; v += 0.5, k++) bulb(P(0, v, 2.28), k % 2 === 0);
+        // shelves of bottles on the wall behind the bar
+        const B = (u, z) => P(u, 0, z);
+        const x0 = RX + 0.6, x1 = W - 0.5;
+        this.poly([B(x0, 0.95), B(x1, 0.95), B(x1, 2.0), B(x0, 2.0)], this.tint(pal.wallL, pal.dark ? -8 : -14), pal.trim);
+        const BOT = ['#5f9a4c', '#de4b40', '#e0a83a', '#3b8ee0', '#f4f1ea', '#8b6be6'];
+        for (const [z, off] of [[1.05, 0], [1.5, 2]]) {
+          this.poly([B(x0, z - 0.04), B(x1, z - 0.04), B(x1, z), B(x0, z)], pal.trim);
+          let i = off;
+          for (let u = x0 + 0.2; u < x1 - 0.15; u += 0.3, i++) {
+            const col = BOT[i % BOT.length], tall = i % 3 === 0;
+            this.art(B(u, z), (c) => {
+              c.fillStyle = INK_HEX; c.fillRect(-1, tall ? -7 : -5, 4, tall ? 7 : 5); c.fillRect(0, tall ? -9 : -7, 2, 2);
+              c.fillStyle = col; c.fillRect(0, tall ? -6 : -4, 2, tall ? 6 : 4);
+              c.fillStyle = 'rgba(255,255,255,.5)'; c.fillRect(0, tall ? -6 : -4, 1, 2);
+            });
+          }
+        }
+      },
+
+      // The sign over the machines.
+      wallBoard() {
+        const { pal, B } = this.wallKit();
+        const { SX0, SX1 } = this.plan;
+        const mid = (SX0 + SX1) / 2, x0 = mid - 1.9, x1 = mid + 1.9;
+        this.poly([B(x0, 0.92), B(x1, 0.92), B(x1, 2.3), B(x0, 2.3)], pal.dark ? '#15121f' : '#231d38', pal.trim);
+        this.poly([B(x0 + 0.08, 1.0), B(x1 - 0.08, 1.0), B(x1 - 0.08, 2.22), B(x0 + 0.08, 2.22)], null, '#ff5c8a');
+        const K = 2, GAP = 2;
+        const wpx = pxTextWidth('WIN', PX_BIG, GAP) * K;
+        const pad = Math.max(0, Math.round(((x1 - x0) * (TW / 2 / ART) - wpx) / 2));
+        this.art(B(x0, 2.14), (c) => {
+          pxText(c, 'WIN', pad + 1, 1, '#7a1f3f', 0.5, K, PX_BIG, GAP);
+          pxText(c, 'WIN', pad, 0, '#ffe066', 0.5, K, PX_BIG, GAP);
+        });
+        for (const [u, z] of [[0.3, 1.2], [3.5, 2.05], [0.35, 2.0], [3.45, 1.25]]) {
+          this.art(B(x0 + u, z), (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, -1, 1, 3); c.fillRect(-1, 0, 3, 1); });
+        }
+      },
+      wallSign() {},
+
+      // ---- a machine and its stool
+      workState(p, face) {
+        const st = (p.s || {}).status;
+        return { pose: 'sit', face, act: st === 'tool' ? 'lever' : st === 'typing' ? 'type' : 'think', sitZ: 0.34 };
+      },
+      desk(dk, p) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        const HUES = ['#b8323a', '#3b6fb0', '#2f8a6a', '#8b56c6', '#c9762a'];
+        const hue = HUES[Math.abs(Math.round(dk.x * 7 + dk.y * 13)) % HUES.length];
+        const x = dk.x + 0.25, y = dk.y + 0.1, w = 0.9, d = 0.6, H = 1.5;
+        const worker = p && p.mode === 'work' && !p.path.length ? p : null;
+        const st = worker ? worker.s.status : null;
+        // Whoever was here last: if they left because they finished, it pays out.
+        if (worker) { dk.lastKey = worker.key; dk.wonAt = 0; }
+        else if (dk.lastKey) {
+          const was = this.people.get(dk.lastKey);
+          if (was && was.s && was.s.status === 'done') dk.wonAt = this.t;
+          dk.lastKey = null;
+        }
+        const win = !!dk.wonAt && this.t - dk.wonAt < 6000;
+        const t = this.t / 1000;
+        const blink = Math.floor(t * 6) % 2 === 0;
+        this.box(x, y, 0, w, d, H, this.shade(hue, 22), hue, this.shade(hue, -24));
+        const F = (u, z) => P(x + u, y + d, z);
+        // the tray, the deck of buttons
+        this.poly([F(0.1, 0.16), F(0.8, 0.16), F(0.8, 0.34), F(0.1, 0.34)], '#1c1a22', this.shade(hue, -45));
+        this.box(x + 0.04, y + d, 0.6, 0.82, 0.12, 0.05, '#2f2b3a', '#1c1a22', '#15131a');
+        this.art(P(x + 0.3, y + d + 0.08, 0.65), (c) => { c.fillStyle = '#de4b40'; c.fillRect(0, -1, 2, 1); c.fillStyle = '#5f9a4c'; c.fillRect(4, 0, 2, 1); });
+        // the marquee burns the colour of what its cat is doing
+        const glow = win ? (blink ? '#fff3b0' : '#f2c230') : st ? STATUS_COLOR[st] || '#f2c230' : this.shade(hue, -34);
+        this.poly([F(0.07, 1.24), F(0.83, 1.24), F(0.83, 1.44), F(0.07, 1.44)], glow, '#c9a24c');
+        // three reels
+        this.poly([F(0.1, 0.78), F(0.8, 0.78), F(0.8, 1.16), F(0.1, 1.16)], win && blink ? '#fff3b0' : '#f8f4e6', '#c9a24c');
+        this.seg(F(0.333, 0.78), F(0.333, 1.16), '#b9b3a0');
+        this.seg(F(0.566, 0.78), F(0.566, 1.16), '#b9b3a0');
+        const SYM = ['#de4b40', '#e0a83a', '#5f9a4c', '#3b8ee0', '#8b6be6'];
+        const seed = Math.abs(Math.round(dk.x * 31 + dk.y * 17));
+        for (let i = 0; i < 3; i++) {
+          const at = F(0.2 + i * 0.233, 0.97);
+          // thinking turns them slowly, a tool fast; a reply stops them one by one
+          let turning = st === 'thinking' || st === 'tool';
+          if (st === 'typing') turning = ((t * 0.7 + dk.x) % 1) < 1 - (i + 1) / 4;
+          if (win) {
+            this.art(at, (c) => { c.fillStyle = '#de4b40'; c.fillRect(-1, -2, 4, 1); c.fillRect(2, -1, 1, 1); c.fillRect(1, 0, 1, 1); c.fillRect(0, 1, 1, 2); });
+          } else if (turning) {
+            const n = Math.floor(t * (st === 'tool' ? 14 : 6) + i * 1.7);
+            this.art(at, (c) => {
+              c.fillStyle = SYM[(n + seed) % 5]; c.fillRect(-1, -3, 3, 2);
+              c.fillStyle = SYM[(n + seed + 2) % 5]; c.fillRect(-1, 0, 3, 2);
+            });
+          } else {
+            const col = SYM[(seed + i * 3 + (st === 'typing' ? Math.floor(t * 0.7 + dk.x) : 0)) % 5];
+            this.art(at, (c) => { c.fillStyle = col; c.fillRect(-1, -2, 3, 4); c.fillStyle = 'rgba(255,255,255,.45)'; c.fillRect(-1, -2, 1, 1); });
+          }
+        }
+        // the lamp on top
+        this.box(x + 0.3, y + 0.2, H, 0.3, 0.2, 0.1, glow, this.shade(glow, -14), this.shade(glow, -28));
+        // the lever, pulled while a tool runs
+        const pulled = st === 'tool' && Math.sin(t * 4 + dk.x) > 0.3 ? 5 : 0;
+        this.art(P(x + w, y + 0.3, 1.0), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(1, -6 + pulled, 3, 8 - pulled);
+          c.fillStyle = '#c9ced6'; c.fillRect(2, -5 + pulled, 1, 6 - pulled);
+          c.fillStyle = INK_HEX; c.fillRect(0, -9 + pulled, 5, 4);
+          c.fillStyle = '#de4b40'; c.fillRect(1, -8 + pulled, 3, 2);
+        });
+        // a win: coins into the tray and out of it
+        if (win) {
+          this.art(F(0.45, 0.16), (c) => {
+            for (let i = 0; i < 7; i++) {
+              const cx = ((i * 5 + 3) % 13) - 6, cy = Math.round(((t * 22 + i * 5) % 16) - 4);
+              c.fillStyle = '#8a6a2a'; c.fillRect(cx, cy, 2, 2);
+              c.fillStyle = '#f2c230'; c.fillRect(cx, cy, 2, 1);
+            }
+          });
+        }
+      },
+      chair(dk) {
+        this.stool(dk.seat.x, dk.seat.y, 0.33, this.pal.chair);
+      },
+
+      // ---- the three games
+      // The cashier: a counter, brass bars, chips stacked on it.
+      cashier(x, y) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const red = pal.couch;
+        this.box(x, y, 0, 2.2, 0.7, 1.0, pal.counter, red, this.shade(red, -18));
+        const F = (u, z) => P(x + u, y + 0.7, z);
+        this.poly([F(0.1, 0.15), F(2.1, 0.15), F(2.1, 0.85), F(0.1, 0.85)], null, '#c9a24c');
+        for (let u = 0.12; u < 2.15; u += 0.22) this.seg(F(u, 1.0), F(u, 1.72), '#c9a24c');
+        this.poly([F(0, 1.72), F(2.2, 1.72), F(2.2, 2.0), F(0, 2.0)], red, '#c9a24c');
+        this.art(F(1.1, 1.87), (c) => { pxDisc(c, 0, 0, 2, 2, '#f2c230'); c.fillStyle = '#8a6a2a'; c.fillRect(0, -1, 1, 3); });
+        const COL = ['#de4b40', '#3b8ee0', '#5f9a4c', '#e0a83a'];
+        for (let k = 0; k < 4; k++) {
+          this.art(P(x + 0.35 + k * 0.5, y + 0.45, 1.0), (c) => {
+            for (let i = 0; i < 2 + (k % 3); i++) {
+              c.fillStyle = INK_HEX; c.fillRect(-3, -2 - i * 2, 6, 3);
+              c.fillStyle = i % 2 ? '#f4f1ea' : COL[k]; c.fillRect(-2, -1 - i * 2, 4, 1);
+            }
+          });
+        }
+      },
+      // The coin pusher: a bed of coins under glass, a shelf that shoves them.
+      pusher(x, y, q) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        const hue = this.pal.dark ? '#4a3a80' : '#6a4fb0';
+        this.box(x, y, 0, 1.2, 0.8, 0.85, this.shade(hue, 18), hue, this.shade(hue, -20));
+        this.poly([P(x + 0.06, y + 0.06, 0.85), P(x + 1.14, y + 0.06, 0.85), P(x + 1.14, y + 0.74, 0.85), P(x + 0.06, y + 0.74, 0.85)], '#231d38');
+        for (let k = 0; k < 12; k++) {
+          this.art(P(x + 0.14 + ((k * 37) % 92) / 100, y + 0.3 + ((k * 53) % 40) / 100, 0.86), (c) => {
+            c.fillStyle = '#8a6a2a'; c.fillRect(0, 0, 2, 2); c.fillStyle = '#f2c230'; c.fillRect(0, 0, 2, 1);
+          });
+        }
+        const on = this.userOf(q);
+        const sh = on ? ((Math.sin(this.t / 260) + 1) / 2) * 0.14 : 0.04;
+        this.box(x + 0.1, y + 0.06 + sh, 0.86, 1.0, 0.16, 0.07, '#c9ced6', '#9aa0a8', '#7d838b');
+        this.box(x, y, 0.85, 1.2, 0.8, 0.42, 'rgba(190,220,255,.16)', 'rgba(190,220,255,.12)', 'rgba(190,220,255,.09)');
+        this.art(P(x + 0.6, y + 0.8, 0.62), (c) => {
+          const k = on ? Math.floor(this.t / 160) % 3 : 0;
+          for (let i = 0; i < 3; i++) { c.fillStyle = i === k ? '#fff3b0' : '#f2c230'; c.fillRect(-5 + i * 4, 0, 2, 2); }
+        });
+      },
+      // The big wheel: eight wedges and a pointer. It turns for whoever is at it.
+      luckyWheel(x, y, q) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const p = this.userOf(q);
+        this.box(x - 0.3, y - 0.2, 0, 0.6, 0.4, 0.1, pal.deskTop, pal.deskL, pal.deskR);
+        this.box(x - 0.05, y - 0.05, 0.1, 0.1, 0.1, 1.25, '#c9a24c', '#a8842f', '#8a6a2a');
+        const rot = p ? (this.t / 1000) * (1.2 + turnTier(p.s) * 0.9) : 0.3;
+        this.art(P(x, y + 0.06, 1.4), (c) => {
+          const R = 11, COL = ['#de4b40', '#f4f1ea', '#3b8ee0', '#f2c230', '#5f9a4c', '#f4f1ea', '#8b6be6', '#f2c230'];
+          pxDisc(c, 0, 0, R + 1, R + 1, INK_HEX);
+          for (let yy = -R; yy <= R; yy++) {
+            for (let xx = -R; xx <= R; xx++) {
+              const d2 = xx * xx + yy * yy;
+              if (d2 > R * R) continue;
+              const k = ((Math.floor((Math.atan2(yy, xx) + rot) / (Math.PI / 4)) % 8) + 8) % 8;
+              c.fillStyle = d2 < 6 ? '#c9a24c' : COL[k]; c.fillRect(xx, yy, 1, 1);
+            }
+          }
+          c.fillStyle = INK_HEX; c.fillRect(-2, -R - 4, 5, 5);
+          c.fillStyle = '#f2c230'; c.fillRect(-1, -R - 3, 3, 2); c.fillRect(0, -R - 1, 1, 2);
+        });
+      },
+      // What stands on the bar: glasses, a shaker, a bowl.
+      barTop(x, y, w) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        for (let k = 0; k * 0.7 < w - 0.4; k++) {
+          const u = 0.3 + k * 0.7;
+          this.art(P(x + u, y + 0.3, 1.0), (c) => {
+            if (k % 3 === 1) {
+              c.fillStyle = INK_HEX; c.fillRect(-2, -7, 5, 7); c.fillStyle = '#c9ced6'; c.fillRect(-1, -6, 3, 5); c.fillStyle = '#ffffff'; c.fillRect(-1, -6, 1, 2);
+            } else {
+              c.fillStyle = INK_HEX; c.fillRect(-2, -5, 5, 5); c.fillRect(0, 0, 1, 1);
+              c.fillStyle = k % 3 ? '#f29aa8' : '#9fd8ff'; c.fillRect(-1, -4, 3, 3);
+              c.fillStyle = '#ffffff'; c.fillRect(-1, -4, 1, 1);
+            }
+          });
+        }
       },
     },
   };
