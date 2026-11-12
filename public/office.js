@@ -1424,7 +1424,9 @@
 
     roomLayer() {
       const { W, D, OW, MR, PY } = this.plan;
-      const key = [this.scene, W, D, OW, MR, PY, this.pal.wood1, this.pal.wallL].join('|');
+      // the notes pinned to the board are painted with the wall, so they are part of what it looks like
+      const pinned = Array.isArray(this.boardNotes) ? this.boardNotes.map((n) => n.color + (n.done ? '-' : '+')).join('') : '?';
+      const key = [this.scene, W, D, OW, MR, PY, this.pal.wood1, this.pal.wallL, pinned].join('|');
       if (this.bg && this.bgKey === key) return this.bg;
       const left = this.iso(0, D, 0).x - 8, right = this.iso(W, 0, 0).x + 8;
       const top = this.iso(0, 0, WALL_H).y - 12, bottom = this.iso(W, D, 0).y + 8;
@@ -1727,21 +1729,28 @@
         const u = s0 + 0.09 + i * (bw + 0.05);
         rect(u, sa + 0.06, u + bw, sa + 0.06 + h, k.bars[i % k.bars.length]);
       });
-      // two notes beside it, where there is room
-      const n0 = s1 + 0.1, n1 = w - 0.14, notes = n1 - n0 > 0.2;
-      if (notes) {
-        const a = dim(k.notes[0]), b = dim(k.notes[1]);
-        rect(n0, sb - 0.3, n1 - 0.04, sb, a);
-        this.seg(Q(n0 + 0.06, sb - 0.14), Q(n1 - 0.1, sb - 0.14), this.tint(a, -70));
-        rect(n0 + 0.05, sa, n1, sa + 0.27, b);
-        this.seg(Q(n0 + 0.11, sa + 0.14), Q(n1 - 0.07, sa + 0.14), this.tint(b, -70));
-      }
       const pin = (u, z) => this.art(Q(u, z), (c) => {
         c.fillStyle = k.pin; c.fillRect(-1, -1, 2, 2);
         c.fillStyle = '#ffffff'; c.fillRect(-1, -1, 1, 1);
       });
       pin((s0 + s1) / 2, sb - 0.03);
-      if (notes) { pin((n0 + n1) / 2 - 0.02, sb - 0.04); pin((n0 + n1) / 2 + 0.03, sa + 0.24); }
+      // The notes beside it are the user's own, in the colours they chose (the
+      // page hands them over as `boardNotes`, the ones still to do first);
+      // until it has, the scene's two stand-ins. As many as there is room for.
+      const n0 = s1 + 0.1, n1 = w - 0.14;
+      if (n1 - n0 <= 0.2) return;
+      const list = Array.isArray(this.boardNotes) ? this.boardNotes : k.notes.map((color) => ({ color }));
+      const gap = 0.06, cols = Math.max(1, Math.floor((n1 - n0 + gap) / 0.3)), rows = 2;
+      const nw = (n1 - n0 - (cols - 1) * gap) / cols, nh = (sb - sa - gap) / rows;
+      list.slice(0, cols * rows).forEach((note, i) => {
+        const u = n0 + (i % cols) * (nw + gap), zt = sb - Math.floor(i / cols) * (nh + gap);
+        const paper = typeof note.color === 'string' ? note.color : k.notes[0];
+        const col = dim(note.done ? this.tint(paper, -36) : paper);
+        rect(u, zt - nh, u + nw, zt, col);
+        this.seg(Q(u + 0.05, zt - nh * 0.45), Q(u + nw - 0.06, zt - nh * 0.45), this.tint(col, -70));
+        this.seg(Q(u + 0.05, zt - nh * 0.7), Q(u + nw - 0.11, zt - nh * 0.7), this.tint(col, -70));
+        pin(u + nw / 2, zt - 0.03);
+      });
     }
 
     // The board is something to click: the page opens the report.

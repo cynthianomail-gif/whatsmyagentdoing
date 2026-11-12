@@ -9,6 +9,7 @@ const updater = require('../src/update');
 const hook = require('../src/hook');
 const { createServer, snapshot } = require('../src/server');
 const { createReports } = require('../src/reports');
+const { createNotes } = require('../src/notes');
 const external = require('../src/external');
 const pkg = require('../package.json');
 const EXTERNAL_DIRS = external.location();
@@ -203,6 +204,8 @@ async function main() {
   const server = createServer(watcher, o, {
     // a made-up team has no days worth keeping
     reports: o.demo ? null : createReports(),
+    // the notes on the notice board; a demo's are forgotten when it stops
+    notes: createNotes(o.demo ? { file: null } : undefined),
     onShutdown: () => { watcher.stop(); server.close(); process.exit(0); },
     // after an update from the page: start the new code on the same port
     onRestart: () => {

@@ -184,6 +184,29 @@
   .report .head { margin: 14px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
   .report .bye { margin-top: 14px; font-size: 13px; }
   .report .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .report .tabs { display: flex; gap: 6px; margin: -4px 0 12px; border-bottom: 1px solid var(--line); }
+  .report .tabs button { padding: 6px 10px 8px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .report .tabs button.on { color: var(--ink); border-bottom-color: var(--ink); }
+  .report .tabs i { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; font-style: normal; font-size: 11px; line-height: 18px; text-align: center; background: var(--waiting); color: #1b1b1b; }
+  .report .notes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .report .note { display: flex; flex-direction: column; min-height: 132px; padding: 10px 10px 6px; border-radius: 4px 4px 12px 4px; background: var(--paper); color: #2a2622; box-shadow: 0 2px 6px rgba(0,0,0,.16); }
+  .report .note:focus-within { box-shadow: 0 0 0 2px var(--ink), 0 2px 6px rgba(0,0,0,.16); }
+  .report .note textarea { flex: 1; min-height: 78px; padding: 0; border: 0; outline: 0; resize: none; background: none; color: inherit; font: inherit; font-size: 13px; line-height: 1.45; }
+  .report .note textarea::placeholder { color: rgba(42,38,34,.45); }
+  .report .note.done textarea { text-decoration: line-through; opacity: .55; }
+  .report .note .bar { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; }
+  .report .note .bar label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+  .report .note .bar input { margin: 0; accent-color: #2a2622; }
+  .report .note .dots { display: flex; gap: 4px; margin-left: auto; }
+  .report .note .dots button { width: 13px; height: 13px; padding: 0; border: 1px solid rgba(42,38,34,.35); border-radius: 50%; cursor: pointer; }
+  .report .note .dots button.on { outline: 2px solid #2a2622; outline-offset: 1px; }
+  .report .note .del { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
+  .report .note .del:hover { opacity: 1; }
+  .report .note.add { align-items: center; justify-content: center; border: 1px dashed var(--faint); background: none; color: var(--muted); box-shadow: none; font: inherit; font-size: 13px; cursor: pointer; }
+  .report .note.add:hover { color: var(--ink); border-color: var(--ink); }
+  .report .notes-foot { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .report .notes-foot .bad { color: #e5484d; }
+  .report .notes-foot button { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; text-decoration: underline; cursor: pointer; }
   .ctx { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); }
   .ctx .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
   .ctx .bar i { display: block; height: 100%; border-radius: 2px; background: var(--done); }
@@ -542,7 +565,7 @@ function applyLang(code) {
   if (typeof renderLangMenu === 'function') { renderLangMenu(); renderSceneMenu(); }
   if (typeof office !== 'undefined' && office) {
     office.offDutyLabel = L.wentHome;
-    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; office.boardLabel = '📋 ' + ((L.rep || I18N.en.rep).board || I18N.en.rep.board);
+    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; syncBoard();
   }
   if (typeof syncControls === 'function') syncControls();
   if (typeof renderVersion === 'function') renderVersion();
@@ -789,9 +812,53 @@ function reportText(d) {
   for (const [p, v] of d.projects) out.push(`- ${p}：${v.turns} ${L.turnsL}・${fmtTokens(v.tokens)}`);
   return out.join('\n');
 }
+// The card the board opens: the report on one tab, the notes on the other.
+function boardBack() {
+  let back = document.getElementById('reportBack');
+  if (back) return back;
+  back = document.createElement('div');
+  back.id = 'reportBack';
+  back.className = 'report-back';
+  // a drag that starts in a note and ends outside the card is not a click on the backdrop
+  let downOn = null;
+  back.addEventListener('mousedown', (e) => { downOn = e.target; });
+  back.addEventListener('click', (e) => {
+    if ((e.target === back && downOn === back) || e.target.closest('[data-r=close]')) { closeBoard(); return; }
+    const tab = e.target.closest('[data-tab]');
+    if (tab) { if (tab.dataset.tab === 'notes') openNotes(); else openReport(); return; }
+    if (e.target.closest('[data-n]')) { noteClick(e); return; }
+    const go = e.target.closest('[data-day]');
+    if (go) { openReport(go.dataset.day); return; }
+    const cp = e.target.closest('[data-r=copy]');
+    if (cp && navigator.clipboard && reportNow) navigator.clipboard.writeText(reportText(reportNow)).then(() => { cp.textContent = RL().copied; }, () => {});
+  });
+  back.addEventListener('input', (e) => {
+    const card = e.target.closest('.note[data-id]');
+    const n = card && e.target.tagName === 'TEXTAREA' && noteBook.list.find((x) => x.id === card.dataset.id);
+    if (n) { n.text = e.target.value; saveNotes(); }
+  });
+  document.body.appendChild(back);
+  return back;
+}
+function closeBoard() {
+  const back = document.getElementById('reportBack');
+  if (back) back.hidden = true;
+  noteBook.trash = null;
+  flushNotes();
+}
+function boardTabs(on) {
+  const todo = noteBook.list.filter((n) => !n.done).length;
+  const tab = (name, text) => `<button type="button" role="tab" data-tab="${name}" aria-selected="${on === name}" class="${on === name ? 'on' : ''}">${text}</button>`;
+  return `<div class="tabs" role="tablist">${tab('report', '📋 ' + esc(RL().title))}${tab('notes', '📝 ' + esc(NL().tab) + (todo ? ` <i>${todo}</i>` : ''))}</div>`;
+}
+// The board on the wall opens the tab that was open last; a report nobody has read yet comes first.
+function openBoard() {
+  if (!reportNew && store.get('boardTab', 'report') === 'notes') openNotes(); else openReport();
+}
 // Open the card on a day: today when none is named.
 async function openReport(day) {
   const seq = ++reportSeq;
+  store.set('boardTab', 'report');
   reportNew = false;
   if (office) office.boardNew = false;
   let today = (state.data.summary || {}).day || '', days = [], rec = null;
@@ -816,24 +883,11 @@ async function openReport(day) {
   const peak = Math.max(1, ...strip.map((x) => x.tokens || 0));
   const sum = strip.reduce((acc, x) => ({ turns: acc.turns + (x.turns || 0), tokens: acc.tokens + (x.tokens || 0) }), { turns: 0, tokens: 0 });
 
-  let back = document.getElementById('reportBack');
-  if (!back) {
-    back = document.createElement('div');
-    back.id = 'reportBack';
-    back.className = 'report-back';
-    back.addEventListener('click', (e) => {
-      if (e.target === back || e.target.closest('[data-r=close]')) { back.hidden = true; return; }
-      const go = e.target.closest('[data-day]');
-      if (go) { openReport(go.dataset.day); return; }
-      const cp = e.target.closest('[data-r=copy]');
-      if (cp && navigator.clipboard && reportNow) navigator.clipboard.writeText(reportText(reportNow)).then(() => { cp.textContent = RL().copied; }, () => {});
-    });
-    document.body.appendChild(back);
-  }
+  const back = boardBack();
   const row = (icon, label, s, val) => (s ? `<div class="row"><span>${icon} ${esc(label)}</span><b>${esc(reportWho(s))}</b><span class="n">${esc(val)}</span></div>` : '');
   const step = (x, name, label, arrow) => `<button type="button" class="btn" data-nav="${name}" ${x ? `data-day="${esc(x.day)}"` : 'disabled'} title="${esc(label)}" aria-label="${esc(label)}">${arrow}</button>`;
   back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(R.title)}">
-    <h2>📋 ${esc(R.title)}</h2>
+    ${boardTabs('report')}
     <div class="nav">${step(days[idx - 1], 'prev', R.prev || '', '◀')}<b>${esc(reportDate(want, { month: 'numeric', day: 'numeric', weekday: 'short' }))}</b>${want === today ? `<span class="tag">${esc(R.today || '')}</span>` : ''}<span class="sp"></span>${step(days[idx + 1], 'next', R.next || '', '▶')}</div>
     <div class="days">${strip.map((x) => `<button type="button" data-day="${esc(x.day)}" class="${x.day === want ? 'on' : ''}" title="${esc(x.day)}・${x.turns || 0} ${esc(L.turnsL)}・${fmtTokens(x.tokens || 0)}"><span class="bar"><i style="height:${Math.round((100 * (x.tokens || 0)) / peak)}%"></i></span><b>${esc(reportDate(x.day, { day: 'numeric' }).replace(/[^0-9]/g, '') || x.day.slice(-2))}</b><small>${esc(x.day === today ? (R.today || '') : reportDate(x.day, { weekday: 'short' }))}</small></button>`).join('')}</div>
     <div class="span">${strip.length > 1 ? `${esc(R.span ? R.span(strip.length) : '')}　${sum.turns} ${esc(L.turnsL)}・${fmtTokens(sum.tokens)} ${esc(L.tokensL)}` : ''}</div>
@@ -863,6 +917,131 @@ async function openReport(day) {
     cv.getContext('2d').drawImage(window.OfficeCats.sprite(breed, false, true, 'open', false), 0, 0);
   }
 }
+// ---- the notes on the board: a few lines of the user's own, kept by the
+// server (src/notes.js) so every scene and every browser shows the same ones.
+const NL = () => RL().notes || I18N.en.rep.notes;
+const NOTE_COLORS = ['#ffe066', '#ff9ec0', '#8fd3ff', '#b5e48c'];
+const NOTE_MAX = 12;
+const noteBook = { list: [], loaded: false, private: false, dirty: false, timer: 0, trash: null, status: '', bad: false };
+
+// What the board on the wall shows: the notes still to do first, in their colours.
+function syncBoard() {
+  if (typeof office === 'undefined' || !office) return;
+  const R = L.rep || I18N.en.rep;
+  const todo = noteBook.list.filter((n) => !n.done);
+  office.boardLabel = '📋 ' + (R.board || I18N.en.rep.board) + (todo.length ? '　📝 ' + todo.length : '');
+  office.boardNotes = noteBook.loaded
+    ? todo.concat(noteBook.list.filter((n) => n.done)).map((n) => ({ color: NOTE_COLORS[n.color] || NOTE_COLORS[0], done: !!n.done }))
+    : null;
+}
+async function loadNotes() {
+  if (noteBook.dirty) return;   // what is on the page is newer
+  try {
+    const r = await fetch('/api/notes').then((x) => x.json());
+    if (noteBook.dirty) return;
+    noteBook.list = Array.isArray(r.notes) ? r.notes : [];
+    noteBook.private = !!r.private;
+    noteBook.loaded = true;
+  } catch { /* keep what is here */ }
+  syncBoard();
+}
+function noteStatus(text, bad) {
+  noteBook.status = text || '';
+  noteBook.bad = !!bad;
+  const el = document.getElementById('noteStatus');
+  if (el) { el.textContent = noteBook.status; el.className = noteBook.bad ? 'bad' : ''; }
+}
+// Every change is saved a moment later, and at once when the card closes.
+function saveNotes() {
+  noteBook.dirty = true;
+  clearTimeout(noteBook.timer);
+  noteBook.timer = setTimeout(flushNotes, 500);
+  syncBoard();
+}
+async function flushNotes() {
+  clearTimeout(noteBook.timer);
+  if (!noteBook.dirty) return;
+  noteBook.dirty = false;
+  try {
+    const res = await fetch('/api/notes', {
+      method: 'PUT', keepalive: true,
+      headers: { 'content-type': 'application/json', 'x-whatsmyagentdoing': 'notes' },
+      body: JSON.stringify({ notes: noteBook.list }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    if (!noteBook.dirty) noteStatus(NL().saved);
+  } catch { noteBook.dirty = true; noteStatus(NL().saveFail, true); }
+}
+function noteCard(n) {
+  const N = NL();
+  const dots = NOTE_COLORS.map((c, i) => `<button type="button" data-n="color" data-c="${i}" class="${i === n.color ? 'on' : ''}" style="background:${c}" title="${esc(N.color)}" aria-label="${esc(N.color)} ${i + 1}"></button>`).join('');
+  return `<div class="note${n.done ? ' done' : ''}" data-id="${esc(n.id)}" style="--paper:${NOTE_COLORS[n.color] || NOTE_COLORS[0]}">
+      <textarea maxlength="300" placeholder="${esc(N.hint)}" aria-label="${esc(N.hint)}">${esc(n.text)}</textarea>
+      <div class="bar"><label><input type="checkbox" data-n="done"${n.done ? ' checked' : ''}>${esc(N.done)}</label><span class="dots">${dots}</span><button type="button" class="del" data-n="del" title="${esc(N.del)}" aria-label="${esc(N.del)}">✕</button></div>
+    </div>`;
+}
+function renderNotes(focusId) {
+  const back = boardBack(), R = RL(), N = NL();
+  const list = noteBook.list, room = list.length < NOTE_MAX;
+  const body = noteBook.private ? `<div class="sub">${esc(N.private)}</div>`
+    : !noteBook.loaded ? `<div class="sub">${esc(N.loadFail)}</div>`
+    : `<div class="notes">${list.map(noteCard).join('')}${room ? `<button type="button" class="note add" data-n="add">＋ ${esc(N.add)}</button>` : ''}</div>
+    <div class="notes-foot"><span id="noteStatus" class="${noteBook.bad ? 'bad' : ''}">${esc(noteBook.status)}</span>${noteBook.trash ? `<span>${esc(N.deleted)}</span><button type="button" data-n="undo">${esc(N.undo)}</button>` : ''}${room ? '' : `<span>${esc(N.full(NOTE_MAX))}</span>`}</div>`;
+  back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(N.tab)}">
+    ${boardTabs('notes')}
+    ${body}
+    <div class="foot"><button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
+  </div>`;
+  back.hidden = false;
+  const ta = focusId && back.querySelector(`.note[data-id="${focusId}"] textarea`);
+  if (ta) ta.focus();
+}
+async function openNotes() {
+  const seq = ++reportSeq;   // a report still on its way has no card to land on now
+  store.set('boardTab', 'notes');
+  noteStatus('');
+  await loadNotes();
+  if (seq !== reportSeq) return;
+  renderNotes();
+}
+function noteClick(e) {
+  const el = e.target.closest('[data-n]'), act = el.dataset.n;
+  const card = el.closest('.note[data-id]');
+  const i = card ? noteBook.list.findIndex((x) => x.id === card.dataset.id) : -1;
+  const n = noteBook.list[i];
+  if (act === 'add') {
+    if (noteBook.list.length >= NOTE_MAX) return;
+    const id = Math.random().toString(36).slice(2, 10) || 'n';
+    const last = noteBook.list[noteBook.list.length - 1];
+    noteBook.list.push({ id, text: '', color: last ? (last.color + 1) % NOTE_COLORS.length : 0, done: false, at: Date.now() });
+    saveNotes();
+    renderNotes(id);
+  } else if (act === 'undo') {
+    const t = noteBook.trash;
+    noteBook.trash = null;
+    if (t && noteBook.list.length < NOTE_MAX) noteBook.list.splice(Math.min(t.i, noteBook.list.length), 0, t.note);
+    saveNotes();
+    renderNotes();
+  } else if (!n) {
+    return;
+  } else if (act === 'done') {
+    n.done = el.checked;
+    card.classList.toggle('done', n.done);
+    saveNotes();
+  } else if (act === 'color') {
+    n.color = Number(el.dataset.c) || 0;
+    card.style.setProperty('--paper', NOTE_COLORS[n.color] || NOTE_COLORS[0]);
+    for (const b of card.querySelectorAll('[data-n=color]')) b.classList.toggle('on', b === el);
+    saveNotes();
+  } else if (act === 'del') {
+    noteBook.trash = { note: n, i };
+    noteBook.list.splice(i, 1);
+    saveNotes();
+    renderNotes();
+  }
+}
+window.addEventListener('pagehide', () => { flushNotes(); });
+
 // Once a day, after REPORT_AT, say that the report is ready.
 function reportClock() {
   if (PIP) return;
@@ -885,7 +1064,8 @@ document.getElementById('todayPanel').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   const back = document.getElementById('reportBack');
   if (!back || back.hidden) return;
-  if (e.key === 'Escape') back.hidden = true;
+  if (e.key === 'Escape') { closeBoard(); return; }
+  if (e.target && e.target.tagName === 'TEXTAREA') return;   // the arrows move the caret in a note
   // left and right page through the days
   const turn = e.key === 'ArrowLeft' ? 'prev' : e.key === 'ArrowRight' ? 'next' : '';
   const btn = turn && back.querySelector(`[data-nav=${turn}][data-day]`);
@@ -1216,7 +1396,7 @@ const officeOpts = {
   onFrame: (renderer) => popout?.drawPreview(renderer),
   label: (s) => nameFor(s),
   // the notice board on the wall: every day's report, to page through
-  onBoard: PIP ? null : () => openReport(),
+  onBoard: PIP ? null : () => openBoard(),
   onHover(s, at, click) {
     // Clicking someone switches the Claude desktop app to their conversation.
     if (click && s) jumpToDesktop(s);
@@ -1250,7 +1430,7 @@ async function makeOffice() {
   const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent, scene: state.scene });
   office = mine;
   office.offDutyLabel = L.wentHome;
-  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; office.boardLabel = '📋 ' + ((L.rep || I18N.en.rep).board || I18N.en.rep.board);
+  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; syncBoard();
   if (LUNCH_PREVIEW != null) office.lunchOverride = LUNCH_PREVIEW;
   if (NIGHT_PREVIEW) office.nightOverride = true;
   office.boardNew = reportNew;
@@ -1649,6 +1829,7 @@ setInterval(tickTimes, 1000);
 setInterval(reportClock, 30 * 1000);
 setTimeout(reportClock, 6000);
 if (REPORT_PREVIEW) setTimeout(openReport, 2500);
+loadNotes();
 </script>
 </body>
 </html>

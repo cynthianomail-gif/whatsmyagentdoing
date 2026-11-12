@@ -125,7 +125,7 @@ function snapshot(watcher, opts) {
   return { now, lang: opts.demo ? null : promptLanguage(raw), sessions, summary: summary(sessions, now) };
 }
 
-function createServer(watcher, opts, { onShutdown, onRestart, reports } = {}) {
+function createServer(watcher, opts, { onShutdown, onRestart, reports, notes } = {}) {
   const clients = new Set();
   let last = '';
 
@@ -214,6 +214,35 @@ function createServer(watcher, opts, { onShutdown, onRestart, reports } = {}) {
       const report = reports && REPORT_DAY.test(day) ? reports.get(day, { privacy: opts.privacy }) : null;
       res.writeHead(report ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(report || { day, sessions: [] }));
+    } else if (url.pathname === '/api/notes' && req.method === 'GET') {
+      // the notes on the notice board; what the user wrote is theirs, so --private shows none
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(opts.privacy ? { notes: [], private: true } : { notes: notes ? notes.list() : [] }));
+    } else if (url.pathname === '/api/notes' && req.method === 'PUT') {
+      // Same guard as shutdown: web pages can't send this header cross-site.
+      if (req.headers['x-whatsmyagentdoing'] !== 'notes' || !notes || opts.privacy) { res.writeHead(403).end(); return; }
+      const chunks = [];
+      let size = 0, over = false;
+      req.on('data', (c) => {
+        if (over) return;
+        size += c.length;
+        if (size > 65536) { over = true; res.writeHead(413).end(); return; }
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        if (over) return;
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+        catch { res.writeHead(400).end(); return; }
+        try {
+          const kept = notes.set(body && body.notes);
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+          res.end(JSON.stringify({ notes: kept }));
+        } catch (e) {
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: String(e.message || e) }));
+        }
+      });
     } else if (url.pathname === '/api/ping') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ app: 'whatsmyagentdoing' }));
