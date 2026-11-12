@@ -18,6 +18,7 @@ const MOUNTS = { '/assets/': path.join(__dirname, '..', 'assets') };
 const updater = require('./update');
 const { ompResumeCommand } = require('./omp');
 const { dayKey } = require('./parsers');
+const { DAY: REPORT_DAY } = require('./reports');
 
 function serveFile(res, root, rel) {
   const file = path.normalize(path.join(root, rel));
@@ -124,13 +125,18 @@ function snapshot(watcher, opts) {
   return { now, lang: opts.demo ? null : promptLanguage(raw), sessions, summary: summary(sessions, now) };
 }
 
-function createServer(watcher, opts, { onShutdown, onRestart } = {}) {
+function createServer(watcher, opts, { onShutdown, onRestart, reports } = {}) {
   const clients = new Set();
   let last = '';
 
   const push = (force) => {
     let body;
-    try { body = JSON.stringify(snapshot(watcher, opts)); } catch (e) { console.error('snapshot failed:', e.message); return; }
+    try {
+      const snap = snapshot(watcher, opts);
+      // each day's report is kept as the day goes (see reports.js)
+      if (reports) reports.note(snap);
+      body = JSON.stringify(snap);
+    } catch (e) { console.error('snapshot failed:', e.message); return; }
     // Compare without the timestamp so idle ticks don't spam clients.
     const sig = body.replace(/^\{"now":\d+,/, '{');
     if (!force && sig === last) return;
@@ -180,6 +186,7 @@ function createServer(watcher, opts, { onShutdown, onRestart } = {}) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       for (const c of clients) c.end();
+      if (reports) reports.save();
       setTimeout(onShutdown, 50);
     } else if (url.pathname === '/api/version') {
       updater.checkLatest().finally(() => {
@@ -198,6 +205,15 @@ function createServer(watcher, opts, { onShutdown, onRestart } = {}) {
         },
         (e) => { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: String(e.message || e) })); },
       );
+    } else if (url.pathname === '/api/reports') {
+      // the days there is a report for, oldest first
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ today: dayKey(Date.now()), days: reports ? reports.days() : [] }));
+    } else if (url.pathname === '/api/report') {
+      const day = url.searchParams.get('day') || '';
+      const report = reports && REPORT_DAY.test(day) ? reports.get(day, { privacy: opts.privacy }) : null;
+      res.writeHead(report ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(report || { day, sessions: [] }));
     } else if (url.pathname === '/api/ping') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ app: 'whatsmyagentdoing' }));

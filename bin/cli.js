@@ -8,6 +8,7 @@ const { DemoWatcher } = require('../src/demo');
 const updater = require('../src/update');
 const hook = require('../src/hook');
 const { createServer, snapshot } = require('../src/server');
+const { createReports } = require('../src/reports');
 const external = require('../src/external');
 const pkg = require('../package.json');
 const EXTERNAL_DIRS = external.location();
@@ -200,6 +201,8 @@ async function main() {
     if (missing) console.error(missing);
   }
   const server = createServer(watcher, o, {
+    // a made-up team has no days worth keeping
+    reports: o.demo ? null : createReports(),
     onShutdown: () => { watcher.stop(); server.close(); process.exit(0); },
     // after an update from the page: start the new code on the same port
     onRestart: () => {

@@ -21,6 +21,7 @@
   // stays put for PET_STAY, and rolls over after PET_BELLY strokes.
   const SHUT_ACTS = new Set(['sun', 'zen', 'fall', 'soak', 'dip', 'massage']);   // things done with the eyes closed
   const PET_KEY = 'pet:cat';
+  const BOARD_KEY = 'board:report';   // the notice board on the wall
   const PET_RUB = 26, PET_GLOW = 2600, PET_STAY = 7000, PET_BELLY = 10;
   const PET_HEART = [[1, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [2, 3]];
   const SPEED = 2.1; // tiles / second
@@ -525,9 +526,10 @@
   // ---------------------------------------------------------------- office
 
   class Office {
-    constructor(root, { onHover, label, onFrame, showAgent = true, compact = false, scene = 'office' } = {}) {
+    constructor(root, { onHover, onBoard, label, onFrame, showAgent = true, compact = false, scene = 'office' } = {}) {
       this.root = root;
       this.onHover = onHover || (() => {});
+      this.onBoard = onBoard || null;   // the notice board was clicked
       this.label = label || ((s) => s.project || s.agent);
       this.onFrame = onFrame;
       this.showAgent = showAgent;
@@ -855,7 +857,7 @@
       const posters = [
         { y: 2.2, w: 3.8, color: '#f2c230', ink: '#3b2a12', text: 'WANIN' },
       ];
-      return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, gym, mats, wait, door: { x: 0.4, y: D - 1.2 } };
+      return { W, D, OW, OD, MR, PY, RW, grid, items, props, pois, desks, windows, posters, pp, gym, mats, wait, door: { x: 0.4, y: D - 1.2 }, notice: { wall: 'left', at: 6.4, w: 1.8, z0: 1.02, z1: 1.98 } };
     }
 
     glassX(add, x, y, d) {
@@ -1196,6 +1198,7 @@
       const key = found ? found.key : null;
       const pet = key === PET_KEY;
       this.canvas.style.cursor = pet ? 'grab' : key ? 'pointer' : 'default';
+      if (click && key === BOARD_KEY && this.onBoard) this.onBoard();
       if (pet) this.rubCat(mx, my, click); else this.rubAt = null;
       // A click on the cat is for the cat: it does not close a pinned card.
       if (key !== this.hoverKey || (click && !pet)) {
@@ -1679,6 +1682,122 @@
     paintWalls() {
       // in parts, so a scene can change one and keep the rest
       this.wallBoard(); this.wallSign(); this.wallBanner(); this.wallClock(); this.wallDoor();
+      this.wallNotice();
+    }
+
+    // Where the day's report hangs: a board on the wall, with the report
+    // pinned to it beside a couple of notes. `plan.notice` says which wall
+    // and where along it.
+    noticeAt() {
+      const n = this.plan.notice;
+      if (!n) return null;
+      const Q = (u, z) => (n.wall === 'left' ? this.iso(0, n.at + u, z) : this.iso(n.at + u, 0, z));
+      return { n, Q };
+    }
+
+    // What the board is made of. A scene gives its own.
+    noticeLook() {
+      return {
+        frame: this.tint(this.pal.trim, 14), back: '#c8995a', sheet: '#fdfdfb', ink: '#3b8ee0', rule: '#b9bcc4',
+        bars: ['#5f9a4c', '#c96442', '#3b8ee0'], notes: ['#ffe066', '#ff9ec0'], pin: '#de4b40', roof: null,
+      };
+    }
+
+    wallNotice() {
+      const at = this.noticeAt();
+      if (!at) return;
+      const { n, Q } = at;
+      const { pal, edge } = this.wallKit();
+      const k = this.noticeLook();
+      const dim = (col) => (pal.dark ? this.tint(col, -38) : col);
+      const rect = (u0, za, u1, zb, fill, stroke) => this.poly([Q(u0, za), Q(u1, za), Q(u1, zb), Q(u0, zb)], fill, stroke);
+      const w = n.w, z0 = n.z0, z1 = n.z1;
+      rect(0, z0, w, z1, k.frame, edge);
+      rect(0.07, z0 + 0.07, w - 0.07, z1 - 0.07, dim(k.back));
+      if (k.roof) rect(-0.12, z1 - 0.02, w + 0.12, z1 + 0.1, k.roof, edge);
+      // the report: a heading, two lines of text, three bars
+      const s0 = 0.15, s1 = s0 + Math.min(0.8, w * 0.48), sa = z0 + 0.13, sb = z1 - 0.14;
+      const sheet = dim(k.sheet);
+      rect(s0, sa, s1, sb, sheet, this.tint(sheet, -46));
+      this.seg(Q(s0 + 0.09, sb - 0.11), Q(s1 - 0.22, sb - 0.11), k.ink);
+      this.seg(Q(s0 + 0.09, sb - 0.22), Q(s1 - 0.09, sb - 0.22), k.rule);
+      this.seg(Q(s0 + 0.09, sb - 0.31), Q(s1 - 0.16, sb - 0.31), k.rule);
+      const bw = (s1 - s0 - 0.28) / 3;
+      [0.14, 0.26, 0.19].forEach((h, i) => {
+        const u = s0 + 0.09 + i * (bw + 0.05);
+        rect(u, sa + 0.06, u + bw, sa + 0.06 + h, k.bars[i % k.bars.length]);
+      });
+      // two notes beside it, where there is room
+      const n0 = s1 + 0.1, n1 = w - 0.14, notes = n1 - n0 > 0.2;
+      if (notes) {
+        const a = dim(k.notes[0]), b = dim(k.notes[1]);
+        rect(n0, sb - 0.3, n1 - 0.04, sb, a);
+        this.seg(Q(n0 + 0.06, sb - 0.14), Q(n1 - 0.1, sb - 0.14), this.tint(a, -70));
+        rect(n0 + 0.05, sa, n1, sa + 0.27, b);
+        this.seg(Q(n0 + 0.11, sa + 0.14), Q(n1 - 0.07, sa + 0.14), this.tint(b, -70));
+      }
+      const pin = (u, z) => this.art(Q(u, z), (c) => {
+        c.fillStyle = k.pin; c.fillRect(-1, -1, 2, 2);
+        c.fillStyle = '#ffffff'; c.fillRect(-1, -1, 1, 1);
+      });
+      pin((s0 + s1) / 2, sb - 0.03);
+      if (notes) { pin((n0 + n1) / 2 - 0.02, sb - 0.04); pin((n0 + n1) / 2 + 0.03, sa + 0.24); }
+    }
+
+    // The board is something to click: the page opens the report.
+    noticeHit() {
+      this.noticeQuad = null;
+      const at = this.onBoard && this.noticeAt();
+      if (!at) return;
+      const { n, Q } = at;
+      const q = [Q(0, n.z0), Q(n.w, n.z0), Q(n.w, n.z1), Q(0, n.z1)];
+      const xs = q.map((p) => p.x), ys = q.map((p) => p.y);
+      this.noticeQuad = q;
+      this.hit.push({ key: BOARD_KEY, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+    }
+
+    // Under the mouse the board lights up and says what it is. With a report
+    // that has not been read yet, a red dot hops on its corner.
+    noticeMark(toScreen) {
+      if (!this.noticeQuad) return;
+      const c = this.ctx;
+      const q = this.noticeQuad.map(toScreen);
+      c.save();
+      if (this.hoverKey === BOARD_KEY) {
+        c.beginPath();
+        q.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+        c.closePath();
+        c.lineJoin = 'round';
+        c.lineWidth = 2;
+        c.strokeStyle = '#ffd866';
+        c.stroke();
+        const text = this.boardLabel || 'Report';
+        c.font = '600 10px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        const w = c.measureText(text).width + 14;
+        const x = (q[0].x + q[1].x) / 2, y = Math.max(q[0].y, q[1].y) + 12;
+        this.roundRect(x - w / 2, y - 9, w, 18, 9, this.pal.bubble);
+        c.fillStyle = this.pal.bubbleInk;
+        c.fillText(text, x, y + 0.5);
+      }
+      if (this.boardNew) {
+        const top = q[2].y < q[3].y ? q[2] : q[3];
+        const hop = Math.abs(Math.sin(this.t / 260)) * 4;
+        c.beginPath();
+        c.arc(top.x, top.y - 2 - hop, 6, 0, Math.PI * 2);
+        c.fillStyle = '#e5484d';
+        c.fill();
+        c.lineWidth = 1.5;
+        c.strokeStyle = '#ffffff';
+        c.stroke();
+        c.fillStyle = '#ffffff';
+        c.font = '700 9px ui-sans-serif, system-ui, sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText('!', top.x, top.y - 1.5 - hop);
+      }
+      c.restore();
     }
 
     wallKit() {
@@ -3544,6 +3663,7 @@
       items.sort((a, b) => a.depth - b.depth);
 
       this.hit = [];
+      this.noticeHit();   // first, so anyone standing in front of it is clicked instead
       const heads = [];
       for (const it of items) {
         if (it.person) heads.push([it.person, this.person(it.person)]);
@@ -3598,6 +3718,7 @@
       });
       for (const [p, at] of heads) this.bubble(p, toScreen(at));
       if (this.catSay) this.catBubble(toScreen(this.catSay.at), this.catSay);
+      this.noticeMark(toScreen);
       if (this.lunch) {
         v.font = '600 11px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
         v.textAlign = 'left';
@@ -3844,6 +3965,7 @@
           W, D, OW: HW, OD: HD, MR: GD, PY: GD, RW: GW, HW, HD, GD, GX,
           grid, items, props: [], pois, desks, windows, posters, pp: null, gym: null, mats, wait,
           door: { x: 0.4, y: D - 1.2 }, seatZ: 0.06, kamiza, pond, stone,
+          notice: { wall: 'left', at: 6.75, w: 1.4, z0: 1.15, z1: 1.95 },
         };
       },
 
@@ -3992,6 +4114,13 @@
         });
       },
       wallSign() {},
+      noticeLook() {
+        const pal = this.pal;
+        return {
+          frame: pal.trim, back: '#d8c08c', sheet: '#f6f0de', ink: '#2a2622', rule: '#8f8672',
+          bars: ['#b8323a', '#39536b', '#6d7f5c'], notes: ['#f6f0de', '#e7d9b8'], pin: '#b8323a', roof: this.tint(pal.trim, -10),
+        };
+      },
 
       // A sliding paper door with a shop curtain over it, a step stone below.
       wallDoor() {
@@ -4484,6 +4613,7 @@
           W, D, OW: SX1, OD: SY1, MR: 3.4, PY: FY, RW: W - RX, SX0, SX1, SY1, FY, RX, lx, ly,
           grid, items, props: [], pois, desks, windows, posters, pp: null, gym: null, mats: [], wait,
           door: { x: 0.4, y: D - 1.2 },
+          notice: { wall: 'back', at: 2.6, w: 1.3, z0: 1.0, z1: 1.9 },
         };
       },
 
@@ -4590,6 +4720,12 @@
         }
       },
       wallSign() {},
+      noticeLook() {
+        return {
+          frame: '#d9a441', back: '#1a1238', sheet: '#fff3c4', ink: '#ff5fa2', rule: '#b9a36a',
+          bars: ['#ff5fa2', '#3fd0c9', '#ffd23f'], notes: ['#ff5fa2', '#3fd0c9'], pin: '#ffd23f', roof: null,
+        };
+      },
 
       // ---- a machine and its stool
       workState(p, face) {
@@ -4950,6 +5086,7 @@
           W, D, OW: LX, OD: BH, MR: BH, PY: BH, RW: W - LX, LX, BH, pool, sa, mural, gate,
           grid, items, props: [], pois, desks, windows, posters, pp, gym: null, mats: [], wait,
           door: { x: 0.4, y: D - 1.2 }, seatZ: 0.1,
+          notice: { wall: 'back', at: 3.6, w: 1.8, z0: 1.15, z1: 1.95 },
         };
       },
 
@@ -5031,6 +5168,12 @@
         this.poly([B(x0, 0.95), B(x1, 0.95), B(x1, 2.0), B(x0, 2.0)], null, edge);
       },
       wallSign() {},
+      noticeLook() {
+        return {
+          frame: this.pal.trim, back: '#c9a877', sheet: '#f6f0de', ink: '#b8323a', rule: '#9c937f',
+          bars: ['#4f8fa8', '#b8323a', '#6d7f5c'], notes: ['#f4c9c0', '#f6f0de'], pin: '#4f8fa8', roof: null,
+        };
+      },
       wallDoor() { SCENE_ART.dojo.wallDoor.call(this); },
       glassX(add, x, y, d) { SCENE_ART.dojo.glassX.call(this, add, x, y, d); },
       glassY(add, x, y, w) { SCENE_ART.dojo.glassY.call(this, add, x, y, w); },
@@ -5263,5 +5406,5 @@
   window.OFFICE_SCENES = SCENES;
   window.OFFICE_AGENT_BADGES = AGENT_BADGES;
   window.OfficeGrid = Grid;
-  window.OfficeCats = { sprite: catSprite, breeds: BREEDS, W: PXW, H: PXH };
+  window.OfficeCats = { sprite: catSprite, breeds: BREEDS, W: PXW, H: PXH, breedFor: (key) => pick(BREEDS, hash(String(key)), 3) };
 })();

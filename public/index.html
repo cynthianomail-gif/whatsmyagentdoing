@@ -154,6 +154,22 @@
   .report { width: min(460px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 20px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: 0 18px 50px rgba(0,0,0,.28); }
   .report h2 { margin: 0; font-size: 18px; }
   .report .sub { margin: 3px 0 14px; font-size: 12px; color: var(--muted); }
+  .report .nav { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .report .nav b { font-size: 14px; }
+  .report .nav .sp { flex: 1; order: 1; }
+  .report .nav .tag { padding: 1px 8px; border-radius: 999px; font-size: 11px; background: color-mix(in srgb, var(--waiting) 22%, var(--panel)); }
+  .report .nav .btn { padding: 3px 9px; }
+  .report .nav .btn[data-nav=next] { order: 2; }
+  .report .nav .btn:disabled { opacity: .35; cursor: default; }
+  .report .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .report .days button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 5px; border: 1px solid var(--line); border-radius: 10px; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .report .days button:hover { border-color: var(--faint); }
+  .report .days button.on { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, var(--panel)); }
+  .report .days .bar { display: flex; align-items: flex-end; width: 16px; height: 26px; }
+  .report .days .bar i { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--waiting); }
+  .report .days b { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .report .days small { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .report .span { margin: 6px 0 14px; font-size: 11px; color: var(--muted); }
   .report .big { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .report .big div { padding: 10px 6px; border: 1px solid var(--line); border-radius: 10px; text-align: center; }
   .report .big b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
@@ -526,7 +542,7 @@ function applyLang(code) {
   if (typeof renderLangMenu === 'function') { renderLangMenu(); renderSceneMenu(); }
   if (typeof office !== 'undefined' && office) {
     office.offDutyLabel = L.wentHome;
-    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort;
+    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; office.boardLabel = '📋 ' + ((L.rep || I18N.en.rep).board || I18N.en.rep.board);
   }
   if (typeof syncControls === 'function') syncControls();
   if (typeof renderVersion === 'function') renderVersion();
@@ -715,12 +731,26 @@ function renderToday() {
     <button type="button" class="btn report-open" id="reportOpen">📋 ${esc(RL().open)}</button>`;
 }
 
-// ---- the day's report: what the office got through today, on one card
+// ---- the day's report: what the office got through in a day, on one card.
+// The server keeps one for every day (src/reports.js), so the card can page
+// back through them; the notice board on the office wall opens it.
 const RL = () => L.rep || I18N.en.rep;
 const REPORT_AT = 18 * 60;   // minutes after midnight at which the report is announced
-function reportData() {
+let reportNow = null;        // the report on the card
+let reportSeq = 0;
+let reportNew = false;       // announced and not opened yet: the board on the wall says so
+
+// Today, from what the page already has: for when the server keeps no reports
+// (a demo) or does not answer.
+function liveRecord() {
   const t = state.data.summary || {};
-  const ss = (state.data.sessions || []).filter((s) => !s.subagent && s.today && (s.today.turns || s.today.tokens));
+  return {
+    day: t.day || '', turns: t.turns || 0, tokens: t.tokens || 0,
+    sessions: (state.data.sessions || []).filter((s) => s.today).map((s) => ({ ...s, done: s.status === 'done' })),
+  };
+}
+function reportData(rec) {
+  const ss = (rec.sessions || []).filter((s) => !s.subagent && s.today && (s.today.turns || s.today.tokens));
   const top = (list, f) => list.slice().sort((a, b) => f(b) - f(a))[0] || null;
   const full = (s) => s.context.used / (s.context.window || 200000);
   const projects = new Map();
@@ -731,8 +761,8 @@ function reportData() {
     projects.set(k, p);
   }
   return {
-    day: t.day || '', turns: t.turns || 0, tokens: t.tokens || 0, cats: ss.length,
-    done: ss.filter((s) => s.status === 'done').length,
+    day: rec.day || '', turns: rec.turns || 0, tokens: rec.tokens || 0, cats: ss.length,
+    done: ss.filter((s) => s.done).length,
     busiest: top(ss, (s) => s.today.tokens || 0),
     chatty: top(ss, (s) => s.today.turns || 0),
     fullest: top(ss.filter((s) => s.context && s.context.used), full),
@@ -742,10 +772,14 @@ function reportData() {
 }
 const reportWho = (s) => nameFor(s) || s.title || s.project || '—';
 const reportPct = (s) => Math.round((100 * s.context.used) / (s.context.window || 200000));
+const reportDate = (day, opts) => {
+  const [y, m, d] = String(day).split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d).toLocaleDateString(chooseLang(), opts) : String(day);
+};
 function reportText(d) {
   const R = RL();
   const out = [`${L.title} ${R.title} ${d.day}`];
-  if (!d.cats) return out.concat(R.none).join('\n');
+  if (!d.cats) return out.concat(R.noneDay || R.none).join('\n');
   out.push(`${d.turns} ${L.turnsL}・${fmtTokens(d.tokens)} ${L.tokensL}・${R.cats} ${d.cats}・${R.done} ${d.done}`);
   if (d.busiest) out.push(`${R.mvp}：${reportWho(d.busiest)}（${fmtTokens(d.busiest.today.tokens || 0)} ${L.tokensL}）`);
   if (d.chatty) out.push(`${R.chatty}：${reportWho(d.chatty)}（${d.chatty.today.turns || 0} ${L.turnsL}）`);
@@ -753,11 +787,35 @@ function reportText(d) {
   if (d.stuck) out.push(`${R.stuck}：${reportWho(d.stuck)}（${L.stuck(d.stuck.stuck)}）`);
   out.push(`${R.projects}：`);
   for (const [p, v] of d.projects) out.push(`- ${p}：${v.turns} ${L.turnsL}・${fmtTokens(v.tokens)}`);
-  out.push(R.bye);
   return out.join('\n');
 }
-function openReport() {
-  const R = RL(), d = reportData();
+// Open the card on a day: today when none is named.
+async function openReport(day) {
+  const seq = ++reportSeq;
+  reportNew = false;
+  if (office) office.boardNew = false;
+  let today = (state.data.summary || {}).day || '', days = [], rec = null;
+  try {
+    const list = await fetch('/api/reports').then((r) => r.json());
+    today = list.today || today;
+    days = Array.isArray(list.days) ? list.days : [];
+    const res = await fetch('/api/report?day=' + encodeURIComponent(day || today));
+    if (res.ok) rec = await res.json();
+  } catch { /* the page's own numbers will do for today */ }
+  if (seq !== reportSeq) return;   // another day was asked for meanwhile
+  const want = day || today;
+  if (!rec) rec = want === today ? liveRecord() : { day: want, sessions: [] };
+  const R = RL(), d = reportData(rec);
+  reportNow = d;
+  // today is always there to come back to, with the numbers on the card
+  days = days.filter((x) => x.day !== today).concat({ day: today, turns: want === today ? d.turns : (days.find((x) => x.day === today) || {}).turns || 0, tokens: want === today ? d.tokens : (days.find((x) => x.day === today) || {}).tokens || 0 });
+  let idx = days.findIndex((x) => x.day === want);
+  if (idx < 0) idx = days.length - 1;
+  const start = Math.max(0, Math.min(idx - 3, days.length - 7));
+  const strip = days.slice(start, start + 7);
+  const peak = Math.max(1, ...strip.map((x) => x.tokens || 0));
+  const sum = strip.reduce((acc, x) => ({ turns: acc.turns + (x.turns || 0), tokens: acc.tokens + (x.tokens || 0) }), { turns: 0, tokens: 0 });
+
   let back = document.getElementById('reportBack');
   if (!back) {
     back = document.createElement('div');
@@ -765,16 +823,21 @@ function openReport() {
     back.className = 'report-back';
     back.addEventListener('click', (e) => {
       if (e.target === back || e.target.closest('[data-r=close]')) { back.hidden = true; return; }
+      const go = e.target.closest('[data-day]');
+      if (go) { openReport(go.dataset.day); return; }
       const cp = e.target.closest('[data-r=copy]');
-      if (cp && navigator.clipboard) navigator.clipboard.writeText(reportText(reportData())).then(() => { cp.textContent = RL().copied; }, () => {});
+      if (cp && navigator.clipboard && reportNow) navigator.clipboard.writeText(reportText(reportNow)).then(() => { cp.textContent = RL().copied; }, () => {});
     });
     document.body.appendChild(back);
   }
   const row = (icon, label, s, val) => (s ? `<div class="row"><span>${icon} ${esc(label)}</span><b>${esc(reportWho(s))}</b><span class="n">${esc(val)}</span></div>` : '');
+  const step = (x, name, label, arrow) => `<button type="button" class="btn" data-nav="${name}" ${x ? `data-day="${esc(x.day)}"` : 'disabled'} title="${esc(label)}" aria-label="${esc(label)}">${arrow}</button>`;
   back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(R.title)}">
     <h2>📋 ${esc(R.title)}</h2>
-    <div class="sub">${esc(L.title)}・${esc(d.day)}</div>
-    ${!d.cats ? `<div class="sub">${esc(R.none)}</div>` : `
+    <div class="nav">${step(days[idx - 1], 'prev', R.prev || '', '◀')}<b>${esc(reportDate(want, { month: 'numeric', day: 'numeric', weekday: 'short' }))}</b>${want === today ? `<span class="tag">${esc(R.today || '')}</span>` : ''}<span class="sp"></span>${step(days[idx + 1], 'next', R.next || '', '▶')}</div>
+    <div class="days">${strip.map((x) => `<button type="button" data-day="${esc(x.day)}" class="${x.day === want ? 'on' : ''}" title="${esc(x.day)}・${x.turns || 0} ${esc(L.turnsL)}・${fmtTokens(x.tokens || 0)}"><span class="bar"><i style="height:${Math.round((100 * (x.tokens || 0)) / peak)}%"></i></span><b>${esc(reportDate(x.day, { day: 'numeric' }).replace(/[^0-9]/g, '') || x.day.slice(-2))}</b><small>${esc(x.day === today ? (R.today || '') : reportDate(x.day, { weekday: 'short' }))}</small></button>`).join('')}</div>
+    <div class="span">${strip.length > 1 ? `${esc(R.span ? R.span(strip.length) : '')}　${sum.turns} ${esc(L.turnsL)}・${fmtTokens(sum.tokens)} ${esc(L.tokensL)}` : ''}</div>
+    ${!d.cats ? `<div class="sub">${esc(want === today ? R.none : (R.noneDay || R.none))}</div>` : `
     <div class="big">
       <div><b>${d.turns}</b><span>${esc(L.turnsL)}</span></div>
       <div><b>${fmtTokens(d.tokens)}</b><span>${esc(L.tokensL)}</span></div>
@@ -787,7 +850,7 @@ function openReport() {
     ${row('🕸️', R.stuck, d.stuck, d.stuck ? L.stuck(d.stuck.stuck) : '')}
     <div class="head">${esc(R.projects)}</div>
     ${d.projects.map(([p, v]) => `<div class="row"><span>${esc(p)}</span><span class="n">${v.turns} ${esc(L.turnsL)}・${fmtTokens(v.tokens)}</span></div>`).join('')}
-    <div class="bye">${esc(R.bye)}</div>`}
+    ${want === today ? `<div class="bye">${esc(R.bye)}</div>` : ''}`}
     <div class="foot"><button type="button" class="btn" data-r="copy">${esc(R.copy)}</button><button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
   </div>`;
   back.hidden = false;
@@ -795,7 +858,7 @@ function openReport() {
   const cv = document.getElementById('reportCat');
   if (cv && window.OfficeCats && d.busiest) {
     const p = office && office.people && office.people.get(d.busiest.key);
-    const breed = (p && p.breed) || window.OfficeCats.breeds[0];
+    const breed = (p && p.breed) || (window.OfficeCats.breedFor ? window.OfficeCats.breedFor(d.busiest.key) : window.OfficeCats.breeds[0]);
     cv.width = window.OfficeCats.W; cv.height = window.OfficeCats.H;
     cv.getContext('2d').drawImage(window.OfficeCats.sprite(breed, false, true, 'open', false), 0, 0);
   }
@@ -810,6 +873,8 @@ function reportClock() {
   const t = state.data && state.data.summary;
   if (!t || !t.agents) return;
   store.set('reportDay', day);
+  reportNew = true;
+  if (office) office.boardNew = true;
   toast(RL().ready, () => openReport());
 }
 document.getElementById('todayPanel').addEventListener('click', (e) => {
@@ -819,7 +884,12 @@ document.getElementById('todayPanel').addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   const back = document.getElementById('reportBack');
-  if (e.key === 'Escape' && back) back.hidden = true;
+  if (!back || back.hidden) return;
+  if (e.key === 'Escape') back.hidden = true;
+  // left and right page through the days
+  const turn = e.key === 'ArrowLeft' ? 'prev' : e.key === 'ArrowRight' ? 'next' : '';
+  const btn = turn && back.querySelector(`[data-nav=${turn}][data-day]`);
+  if (btn) btn.click();
 });
 
 function card(s, now) {
@@ -1145,6 +1215,8 @@ const officeOpts = {
   compact: PIP,
   onFrame: (renderer) => popout?.drawPreview(renderer),
   label: (s) => nameFor(s),
+  // the notice board on the wall: every day's report, to page through
+  onBoard: PIP ? null : () => openReport(),
   onHover(s, at, click) {
     // Clicking someone switches the Claude desktop app to their conversation.
     if (click && s) jumpToDesktop(s);
@@ -1178,9 +1250,10 @@ async function makeOffice() {
   const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent, scene: state.scene });
   office = mine;
   office.offDutyLabel = L.wentHome;
-  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort;
+  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort; office.boardLabel = '📋 ' + ((L.rep || I18N.en.rep).board || I18N.en.rep.board);
   if (LUNCH_PREVIEW != null) office.lunchOverride = LUNCH_PREVIEW;
   if (NIGHT_PREVIEW) office.nightOverride = true;
+  office.boardNew = reportNew;
   office.setInset(panelInset(), false);
   render();
   await mine.ready;
