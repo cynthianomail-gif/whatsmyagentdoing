@@ -423,7 +423,7 @@
           <div class="pick-list" id="sceneList" role="listbox"></div>
         </div>
       </details>
-      <details class="settings menu" id="langMenu">
+      <details class="settings menu" id="langMenu" style="display:none">
         <summary class="btn" aria-controls="langPanel" data-a="language"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2M12 3.2c2.6 2.6 3.7 5.6 3.7 8.8s-1.1 6.2-3.7 8.8M12 3.2C9.4 5.8 8.3 8.8 8.3 12s1.1 6.2 3.7 8.8"/></svg><span id="langName"></span></summary>
         <div class="settings-panel list-panel" id="langPanel">
           <div class="setting-label" data-t="language"></div>
@@ -485,11 +485,11 @@
 let L = I18N.en;
 let langCode = 'en';
 let rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto', style: 'short' });
-function chooseLang(serverGuess) {
-  const pick = store.get('lang', 'auto');
-  if (pick !== 'auto' && I18N[pick]) return pick;
-  if (serverGuess && I18N[serverGuess]) return serverGuess;
-  return i18nFromBrowser(navigator.languages || [navigator.language]) || 'en';
+// This office speaks Traditional Chinese and nothing else: the language
+// menu is hidden, and neither a saved choice, the address, the browser nor
+// a guess from the prompts changes it.
+function chooseLang() {
+  return 'zh-TW';
 }
 function applyLang(code) {
   if (code === langCode && L === I18N[code] && document.documentElement.dataset.localized) return;
