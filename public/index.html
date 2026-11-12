@@ -416,6 +416,13 @@
           <div class="pick-list" id="pickChips" role="group"></div>
         </div>
       </details>
+      <details class="settings menu" id="sceneMenu">
+        <summary class="btn" aria-controls="scenePanel" id="sceneBtn"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5L12 4l8.5 7.5M6 10v9.5h12V10M10 19.5v-5h4v5"/></svg><span id="sceneName"></span></summary>
+        <div class="settings-panel list-panel" id="scenePanel">
+          <div class="setting-label" id="sceneLabel"></div>
+          <div class="pick-list" id="sceneList" role="listbox"></div>
+        </div>
+      </details>
       <details class="settings menu" id="langMenu">
         <summary class="btn" aria-controls="langPanel" data-a="language"><svg class="ui-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2M12 3.2c2.6 2.6 3.7 5.6 3.7 8.8s-1.1 6.2-3.7 8.8M12 3.2C9.4 5.8 8.3 8.8 8.3 12s1.1 6.2 3.7 8.8"/></svg><span id="langName"></span></summary>
         <div class="settings-panel list-panel" id="langPanel">
@@ -496,7 +503,7 @@ function applyLang(code) {
   const legend = document.getElementById('legend');
   if (legend) legend.innerHTML = ['thinking', 'tool', 'typing', 'waiting', 'done', 'error']
     .map((k) => `<span data-s="${k}"><span class="dot" style="color:var(--s)"></span>${L[k]}</span>`).join('');
-  if (typeof renderLangMenu === 'function') renderLangMenu();
+  if (typeof renderLangMenu === 'function') { renderLangMenu(); renderSceneMenu(); }
   if (typeof office !== 'undefined' && office) {
     office.offDutyLabel = L.wentHome;
     office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
@@ -512,7 +519,7 @@ const store = (() => {
   return { get, set };
 })();
 
-const PREF_DEFAULTS = { view: 'office', agents: [], picked: [], names: {}, showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, jump: true, lang: 'auto' };
+const PREF_DEFAULTS = { view: 'office', agents: [], picked: [], names: {}, showSub: false, showIdle: false, showAgent: true, sound: false, notify: true, side: true, jump: true, lang: 'auto', scene: 'office' };
 // A custom name is keyed either by folder ("dir:...") or by one conversation
 // ("sess:..."). The folder is the one worth naming — a project keeps its name
 // as new conversations open in it — and a single conversation can override it.
@@ -538,6 +545,7 @@ function validPreference(k, v) {
     return e.length <= 400 && e.every(([nk, nv]) => validNameKey(nk) && typeof nv === 'string' && nv.length > 0 && nv.length <= 24);
   }
   if (k === 'lang') return v === 'auto' || Object.hasOwn(I18N, v);
+  if (k === 'scene') return (window.OFFICE_SCENES || ['office']).includes(v);
   return typeof v === 'string' && /^[a-z0-9-]+$/.test(v);
 }
 // The filter used to be one agent or 'all'; carry an old single choice over once.
@@ -1028,11 +1036,12 @@ function setLoading(on, text) {
   if (text) document.getElementById('loaderText').textContent = text;
 }
 async function makeOffice() {
-  if (officeKind === 'mid') return;
+  // Built once, and again only when the scene changes.
+  if (officeKind === 'mid' && office && office.scene === state.scene) return;
   officeKind = 'mid';
   setLoading(true, L.loading2d);
   if (office) office.destroy();
-  const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent });
+  const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent, scene: state.scene });
   office = mine;
   office.offDutyLabel = L.wentHome;
   office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
@@ -1092,6 +1101,23 @@ function renderLangMenu() {
   document.getElementById('langList').innerHTML = item('auto', L.auto, I18N[chooseLangAuto()]?.langName) +
     Object.entries(I18N).map(([k, v]) => item(k, v.langName)).join('');
 }
+// ---- scene: the same office, dressed differently
+function sceneText(key) { return (L.scenes && L.scenes[key]) || (I18N.en.scenes && I18N.en.scenes[key]) || key; }
+function renderSceneMenu() {
+  const label = L.scene || I18N.en.scene;
+  const btn = document.getElementById('sceneBtn');
+  btn.setAttribute('aria-label', label); btn.title = label;
+  document.getElementById('sceneLabel').textContent = label;
+  document.getElementById('sceneName').textContent = sceneText(state.scene);
+  document.getElementById('sceneList').innerHTML = (window.OFFICE_SCENES || ['office']).map((k) =>
+    `<button role="option" aria-selected="${k === state.scene}" data-scene="${k}" class="${k === state.scene ? 'on' : ''}"><span class="lbl">${esc(sceneText(k))}</span>${CHECK}</button>`).join('');
+}
+document.getElementById('sceneList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-scene]'); if (!b) return;
+  state.scene = b.dataset.scene; store.set('scene', state.scene);
+  renderSceneMenu(); closeMenus(); hideTip();
+  makeOffice();
+});
 function chooseLangAuto() { return (state.data.lang && I18N[state.data.lang] ? state.data.lang : i18nFromBrowser(navigator.languages || [navigator.language])) || 'en'; }
 document.getElementById('langList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-lang]'); if (!b) return;
@@ -1112,6 +1138,7 @@ window.addEventListener('storage', (e) => {
   if (e.key !== null && !Object.keys(PREF_DEFAULTS).some((k) => e.key === 'wmad.' + k)) return;
   Object.assign(state, readPreferences());
   renderLangMenu();
+  renderSceneMenu();
   hideTip();
   applyLang(chooseLang(state.data.lang));
   syncControls();
