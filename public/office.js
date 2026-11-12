@@ -1816,8 +1816,11 @@
         // a glint on the glass, then the frame: a rail, a post, a sill
         this.seg(Wn(0.14, 1.04), Wn(0.3, 1.36), 'rgba(255,255,255,.4)');
         this.seg(Wn(0.94, 0.98), Wn(1.06, 1.22), 'rgba(255,255,255,.3)');
-        this.poly([Wn(0.72, 0.85), Wn(0.78, 0.85), Wn(0.78, 2.0), Wn(0.72, 2.0)], pal.trim);
-        this.poly([Wn(0, 1.5), Wn(1.5, 1.5), Wn(1.5, 1.55), Wn(0, 1.55)], pal.trim);
+        // The post and the rail are a pixel thick, so they are drawn as lines.
+        // As slivers of polygon they came and went with where the window
+        // stood: one window had a post and no rail, the next a rail and no post.
+        this.seg(Wn(0.75, 0.85), Wn(0.75, 2.0), pal.trim);
+        this.seg(Wn(0, 1.52), Wn(1.5, 1.52), pal.trim);
         this.poly([Wn(0, 0.85), Wn(1.5, 0.85), Wn(1.5, 2.0), Wn(0, 2.0)], null, frame);
         this.box(x - 0.04, 0, 0.8, 1.58, 0.07, 0.05, this.tint(pal.trim, 14), pal.trim, frame);
         this.poly([P(x, 0.05), P(x + 1.5, 0.05), P(x + 1.95, 1.2), P(x + 0.45, 1.2)], sky.night ? 'rgba(120,140,200,.06)' : 'rgba(255,250,230,.16)');
