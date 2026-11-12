@@ -12,6 +12,8 @@ const STATIC = {
   '/office.js': ['office.js', 'text/javascript; charset=utf-8'],
   '/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'],
   '/popout.js': ['popout.js', 'text/javascript; charset=utf-8'],
+  '/notes': ['notes.html', 'text/html; charset=utf-8'],
+  '/notes.js': ['notes.js', 'text/javascript; charset=utf-8'],
 };
 const TYPES = { '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json' };
 const MOUNTS = { '/assets/': path.join(__dirname, '..', 'assets') };

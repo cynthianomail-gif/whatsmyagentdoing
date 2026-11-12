@@ -61,12 +61,12 @@ function serve(t, opts, extra) {
     resolve(server.address().port);
   }));
 }
-function call(port, method, headers, body) {
+function call(port, method, headers, body, at = '/api/notes') {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: '/api/notes', method, headers: { host: 'localhost', ...headers } }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port, path: at, method, headers: { host: 'localhost', ...headers } }, (res) => {
       let text = '';
       res.on('data', (c) => { text += c; });
-      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch { /* no body */ } resolve({ status: res.statusCode, json }); });
+      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch { /* no body */ } resolve({ status: res.statusCode, json, text, type: res.headers['content-type'] }); });
     });
     req.on('error', reject);
     req.end(body);
@@ -98,4 +98,18 @@ test('private mode shows no notes and takes none', async (t) => {
   assert.deepEqual((await call(port, 'GET', {})).json, { notes: [], private: true });
   assert.equal((await call(port, 'PUT', OURS, JSON.stringify({ notes: [] }))).status, 403);
   assert.equal(notes.list()[0].text, 'secret');
+});
+
+test('the notes window and the script it shares with the office are served', async (t) => {
+  const port = await serve(t, { privacy: false }, { notes: createNotes({ file: null }) });
+  const page = await call(port, 'GET', {}, undefined, '/notes?id=abc');
+  assert.equal(page.status, 200);
+  assert.match(page.type, /^text\/html/);
+  assert.match(page.text, /<script src="\/notes\.js"><\/script>/);
+  const js = await call(port, 'GET', {}, undefined, '/notes.js');
+  assert.equal(js.status, 200);
+  assert.match(js.type, /^text\/javascript/);
+  assert.match(js.text, /window\.NoteBook = NoteBook/);
+  // the office page loads the same script
+  assert.match((await call(port, 'GET', {}, undefined, '/')).text, /<script src="\/notes\.js"><\/script>/);
 });

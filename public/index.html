@@ -200,8 +200,9 @@
   .report .note .dots { display: flex; gap: 4px; margin-left: auto; }
   .report .note .dots button { width: 13px; height: 13px; padding: 0; border: 1px solid rgba(42,38,34,.35); border-radius: 50%; cursor: pointer; }
   .report .note .dots button.on { outline: 2px solid #2a2622; outline-offset: 1px; }
-  .report .note .del { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
-  .report .note .del:hover { opacity: 1; }
+  .report .note .del, .report .note .pop { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
+  .report .note .del:hover, .report .note .pop:hover { opacity: 1; }
+  .report .foot .pop-all { margin-right: auto; }
   .report .note.add { align-items: center; justify-content: center; border: 1px dashed var(--faint); background: none; color: var(--muted); box-shadow: none; font: inherit; font-size: 13px; cursor: pointer; }
   .report .note.add:hover { color: var(--ink); border-color: var(--ink); }
   .report .notes-foot { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -537,6 +538,7 @@
 <script src="/i18n.js"></script>
 <script src="/office.js"></script>
 <script src="/popout.js"></script>
+<script src="/notes.js"></script>
 
 <script>
 // Language: your pick in the 🌐 menu, else the language of your prompts
@@ -826,17 +828,13 @@ function boardBack() {
     if ((e.target === back && downOn === back) || e.target.closest('[data-r=close]')) { closeBoard(); return; }
     const tab = e.target.closest('[data-tab]');
     if (tab) { if (tab.dataset.tab === 'notes') openNotes(); else openReport(); return; }
-    if (e.target.closest('[data-n]')) { noteClick(e); return; }
+    if (e.target.closest('[data-n]')) { noteBook.click(e); return; }
     const go = e.target.closest('[data-day]');
     if (go) { openReport(go.dataset.day); return; }
     const cp = e.target.closest('[data-r=copy]');
     if (cp && navigator.clipboard && reportNow) navigator.clipboard.writeText(reportText(reportNow)).then(() => { cp.textContent = RL().copied; }, () => {});
   });
-  back.addEventListener('input', (e) => {
-    const card = e.target.closest('.note[data-id]');
-    const n = card && e.target.tagName === 'TEXTAREA' && noteBook.list.find((x) => x.id === card.dataset.id);
-    if (n) { n.text = e.target.value; saveNotes(); }
-  });
+  back.addEventListener('input', (e) => noteBook.input(e));
   document.body.appendChild(back);
   return back;
 }
@@ -844,11 +842,11 @@ function closeBoard() {
   const back = document.getElementById('reportBack');
   if (back) back.hidden = true;
   noteBook.trash = null;
-  flushNotes();
+  noteBook.flush();
 }
 function boardTabs(on) {
-  const todo = noteBook.list.filter((n) => !n.done).length;
-  const tab = (name, text) => `<button type="button" role="tab" data-tab="${name}" aria-selected="${on === name}" class="${on === name ? 'on' : ''}">${text}</button>`;
+  const todo = noteBook.todo.length;
+  const tab =(name, text) => `<button type="button" role="tab" data-tab="${name}" aria-selected="${on === name}" class="${on === name ? 'on' : ''}">${text}</button>`;
   return `<div class="tabs" role="tablist">${tab('report', '📋 ' + esc(RL().title))}${tab('notes', '📝 ' + esc(NL().tab) + (todo ? ` <i>${todo}</i>` : ''))}</div>`;
 }
 // The board on the wall opens the tab that was open last; a report nobody has read yet comes first.
@@ -919,78 +917,37 @@ async function openReport(day) {
 }
 // ---- the notes on the board: a few lines of the user's own, kept by the
 // server (src/notes.js) so every scene and every browser shows the same ones.
+// The notes themselves are in notes.js, which the notes window (/notes) shares.
 const NL = () => RL().notes || I18N.en.rep.notes;
-const NOTE_COLORS = ['#ffe066', '#ff9ec0', '#8fd3ff', '#b5e48c'];
-const NOTE_MAX = 12;
-const noteBook = { list: [], loaded: false, private: false, dirty: false, timer: 0, trash: null, status: '', bad: false };
+const notesOnShow = () => {
+  const back = document.getElementById('reportBack');
+  return !!back && !back.hidden && !!back.querySelector('[data-tab=notes].on');
+};
+const noteBook = new NoteBook({
+  text: NL,
+  changed: () => syncBoard(),
+  render: (focusId) => { if (notesOnShow()) renderNotes(focusId); },
+  // all the notes went to a window of their own: the card here has done its job
+  opened: (id) => { if (!id) closeBoard(); },
+});
 
 // What the board on the wall shows: the notes still to do first, in their colours.
 function syncBoard() {
   if (typeof office === 'undefined' || !office) return;
   const R = L.rep || I18N.en.rep;
-  const todo = noteBook.list.filter((n) => !n.done);
+  const todo = noteBook.todo;
   office.boardLabel = '📋 ' + (R.board || I18N.en.rep.board) + (todo.length ? '　📝 ' + todo.length : '');
   office.boardNotes = noteBook.loaded
-    ? todo.concat(noteBook.list.filter((n) => n.done)).map((n) => ({ color: NOTE_COLORS[n.color] || NOTE_COLORS[0], done: !!n.done }))
+    ? todo.concat(noteBook.list.filter((n) => n.done)).map((n) => ({ color: noteBook.colour(n), done: !!n.done }))
     : null;
-}
-async function loadNotes() {
-  if (noteBook.dirty) return;   // what is on the page is newer
-  try {
-    const r = await fetch('/api/notes').then((x) => x.json());
-    if (noteBook.dirty) return;
-    noteBook.list = Array.isArray(r.notes) ? r.notes : [];
-    noteBook.private = !!r.private;
-    noteBook.loaded = true;
-  } catch { /* keep what is here */ }
-  syncBoard();
-}
-function noteStatus(text, bad) {
-  noteBook.status = text || '';
-  noteBook.bad = !!bad;
-  const el = document.getElementById('noteStatus');
-  if (el) { el.textContent = noteBook.status; el.className = noteBook.bad ? 'bad' : ''; }
-}
-// Every change is saved a moment later, and at once when the card closes.
-function saveNotes() {
-  noteBook.dirty = true;
-  clearTimeout(noteBook.timer);
-  noteBook.timer = setTimeout(flushNotes, 500);
-  syncBoard();
-}
-async function flushNotes() {
-  clearTimeout(noteBook.timer);
-  if (!noteBook.dirty) return;
-  noteBook.dirty = false;
-  try {
-    const res = await fetch('/api/notes', {
-      method: 'PUT', keepalive: true,
-      headers: { 'content-type': 'application/json', 'x-whatsmyagentdoing': 'notes' },
-      body: JSON.stringify({ notes: noteBook.list }),
-    });
-    if (!res.ok) throw new Error(String(res.status));
-    if (!noteBook.dirty) noteStatus(NL().saved);
-  } catch { noteBook.dirty = true; noteStatus(NL().saveFail, true); }
-}
-function noteCard(n) {
-  const N = NL();
-  const dots = NOTE_COLORS.map((c, i) => `<button type="button" data-n="color" data-c="${i}" class="${i === n.color ? 'on' : ''}" style="background:${c}" title="${esc(N.color)}" aria-label="${esc(N.color)} ${i + 1}"></button>`).join('');
-  return `<div class="note${n.done ? ' done' : ''}" data-id="${esc(n.id)}" style="--paper:${NOTE_COLORS[n.color] || NOTE_COLORS[0]}">
-      <textarea maxlength="300" placeholder="${esc(N.hint)}" aria-label="${esc(N.hint)}">${esc(n.text)}</textarea>
-      <div class="bar"><label><input type="checkbox" data-n="done"${n.done ? ' checked' : ''}>${esc(N.done)}</label><span class="dots">${dots}</span><button type="button" class="del" data-n="del" title="${esc(N.del)}" aria-label="${esc(N.del)}">✕</button></div>
-    </div>`;
 }
 function renderNotes(focusId) {
   const back = boardBack(), R = RL(), N = NL();
-  const list = noteBook.list, room = list.length < NOTE_MAX;
-  const body = noteBook.private ? `<div class="sub">${esc(N.private)}</div>`
-    : !noteBook.loaded ? `<div class="sub">${esc(N.loadFail)}</div>`
-    : `<div class="notes">${list.map(noteCard).join('')}${room ? `<button type="button" class="note add" data-n="add">＋ ${esc(N.add)}</button>` : ''}</div>
-    <div class="notes-foot"><span id="noteStatus" class="${noteBook.bad ? 'bad' : ''}">${esc(noteBook.status)}</span>${noteBook.trash ? `<span>${esc(N.deleted)}</span><button type="button" data-n="undo">${esc(N.undo)}</button>` : ''}${room ? '' : `<span>${esc(N.full(NOTE_MAX))}</span>`}</div>`;
+  const pop = noteBook.unseen() ? '' : `<button type="button" class="btn pop-all" data-n="popall">↗ ${esc(N.popAll)}</button>`;
   back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(N.tab)}">
     ${boardTabs('notes')}
-    ${body}
-    <div class="foot"><button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
+    ${noteBook.body()}
+    <div class="foot">${pop}<button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
   </div>`;
   back.hidden = false;
   const ta = focusId && back.querySelector(`.note[data-id="${focusId}"] textarea`);
@@ -999,48 +956,11 @@ function renderNotes(focusId) {
 async function openNotes() {
   const seq = ++reportSeq;   // a report still on its way has no card to land on now
   store.set('boardTab', 'notes');
-  noteStatus('');
-  await loadNotes();
+  noteBook.say('');
+  await noteBook.load();
   if (seq !== reportSeq) return;
   renderNotes();
 }
-function noteClick(e) {
-  const el = e.target.closest('[data-n]'), act = el.dataset.n;
-  const card = el.closest('.note[data-id]');
-  const i = card ? noteBook.list.findIndex((x) => x.id === card.dataset.id) : -1;
-  const n = noteBook.list[i];
-  if (act === 'add') {
-    if (noteBook.list.length >= NOTE_MAX) return;
-    const id = Math.random().toString(36).slice(2, 10) || 'n';
-    const last = noteBook.list[noteBook.list.length - 1];
-    noteBook.list.push({ id, text: '', color: last ? (last.color + 1) % NOTE_COLORS.length : 0, done: false, at: Date.now() });
-    saveNotes();
-    renderNotes(id);
-  } else if (act === 'undo') {
-    const t = noteBook.trash;
-    noteBook.trash = null;
-    if (t && noteBook.list.length < NOTE_MAX) noteBook.list.splice(Math.min(t.i, noteBook.list.length), 0, t.note);
-    saveNotes();
-    renderNotes();
-  } else if (!n) {
-    return;
-  } else if (act === 'done') {
-    n.done = el.checked;
-    card.classList.toggle('done', n.done);
-    saveNotes();
-  } else if (act === 'color') {
-    n.color = Number(el.dataset.c) || 0;
-    card.style.setProperty('--paper', NOTE_COLORS[n.color] || NOTE_COLORS[0]);
-    for (const b of card.querySelectorAll('[data-n=color]')) b.classList.toggle('on', b === el);
-    saveNotes();
-  } else if (act === 'del') {
-    noteBook.trash = { note: n, i };
-    noteBook.list.splice(i, 1);
-    saveNotes();
-    renderNotes();
-  }
-}
-window.addEventListener('pagehide', () => { flushNotes(); });
 
 // Once a day, after REPORT_AT, say that the report is ready.
 function reportClock() {
@@ -1829,7 +1749,7 @@ setInterval(tickTimes, 1000);
 setInterval(reportClock, 30 * 1000);
 setTimeout(reportClock, 6000);
 if (REPORT_PREVIEW) setTimeout(openReport, 2500);
-loadNotes();
+noteBook.load();
 </script>
 </body>
 </html>
