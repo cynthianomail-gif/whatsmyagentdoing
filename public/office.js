@@ -423,8 +423,9 @@
     const h = d.getHours() + d.getMinutes() / 60;
     if (h >= 7 && h < 17) return { sky: '#a9d4f2', night: false };
     if (h >= 5 && h < 7) return { sky: '#f3c9a8', night: false };
-    if (h >= 17 && h < 19) return { sky: '#f0a679', night: false };
-    return { sky: '#1d2747', night: true };
+    // `lamps`: it is dark enough indoors for the lights to be on
+    if (h >= 17 && h < 19) return { sky: '#f0a679', night: false, lamps: true };
+    return { sky: '#1d2747', night: true, lamps: true };
   }
 
   // ---------------------------------------------------------------- A* grid
@@ -1356,7 +1357,7 @@
     // the whole frame budget.
     drawItem(it) {
       if (typeof it.live === 'function' ? it.live() : it.live) { it.draw(); return; }
-      const key = this.bgKey + '|' + (skyColor().night ? 'n' : 'd') + (it.state ? '|' + it.state() : '');
+      const key = this.bgKey + '|' + (this.skyNow().night ? 'n' : 'd') + (it.state ? '|' + it.state() : '');
       if (it.bakedFor !== key) {
         // A few per frame: baking the room in one go would stall the first one.
         if (this.bakedThisFrame >= 4) { it.draw(); return; }
@@ -1797,7 +1798,7 @@
 
       // Windows, with the real sky outside: a cloud drifting by day, a moon
       // and two stars by night.
-      const sky = skyColor();
+      const sky = this.skyNow();
       const frame = this.tint(pal.trim, pal.dark ? -14 : -24);
       for (const x of this.plan.windows) {
         const Wn = (u, z) => P(x + u, 0, z);
@@ -2221,7 +2222,7 @@
     floorLamp(x, y) {
       const c0 = this.ctx;
       const b = this.iso(x, y, 0);
-      const night = skyColor().night;
+      const night = this.skyNow().night;
       if (night) {
         c0.fillStyle = 'rgba(255,220,140,.14)';
         c0.beginPath(); c0.ellipse(b.x, b.y, 50, 25, 0, 0, Math.PI * 2); c0.fill();
@@ -2745,7 +2746,7 @@
       const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
       // Basking shuts the eyes, and so does a bar that is nearly too heavy.
       const strain = STAT_OF[st.act] === 'ctx' && ctxPct(s) >= 0.85;
-      const eyes = (blink || sleepy || napping || strain || SHUT_ACTS.has(st.act)) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
+      const eyes = (blink || sleepy || napping || strain || SHUT_ACTS.has(st.act)) ? 'shut' : s.status === 'error' || s.stuck ? 'wide' : 'open';
       const sprite = catSprite(br, seated, front, eyes, kit);
       c.imageSmoothingEnabled = false;
       c.drawImage(sprite, -PXC, -PXH + 1);
@@ -2763,7 +2764,37 @@
       };
       const sip = Math.sin(t * 0.9 + p.phase) > 0.6;
       const top = -PXH + 13;
-      switch (kit ? 'kit:' + st.act : st.act) {
+      // Stuck (silent for minutes in the middle of something) stops whatever it was doing.
+      const stuck = !!s.stuck && p.mode === 'work' && !moving;
+      switch (stuck ? 'stuck' : kit ? 'kit:' + st.act : st.act) {
+        case 'stuck': {
+          // Nothing has moved for so long that a spider has moved in: a web
+          // across the corner by its ear, and the spider on its thread.
+          const web = '#f4f4f8';
+          const wx = -15, wy = -PXH - 1;
+          // the web twice: once dark and a pixel off, so it shows on a pale
+          // floor, then pale, so it shows on a dark cat
+          const strands = (ox, oy) => {
+            for (let i = 0; i < 11; i++) { c.fillRect(wx + i + ox, wy + oy, 1, 1); c.fillRect(wx + ox, wy + i + oy, 1, 1); if (i < 9) c.fillRect(wx + i + ox, wy + i + oy, 1, 1); }
+            for (let i = 0; i < 8; i++) c.fillRect(wx + i + ox, wy + Math.round(i / 2) + oy, 1, 1);
+            for (let i = 0; i < 8; i++) c.fillRect(wx + Math.round(i / 2) + ox, wy + i + oy, 1, 1);
+            for (const r of [3, 6, 9]) {
+              c.fillRect(wx + r + ox, wy + 1 + oy, 1, 1); c.fillRect(wx + r - 1 + ox, wy + 2 + oy, 1, 1);
+              c.fillRect(wx + 1 + ox, wy + r + oy, 1, 1); c.fillRect(wx + 2 + ox, wy + r - 1 + oy, 1, 1);
+              c.fillRect(wx + r - 2 + ox, wy + r - 2 + oy, 1, 1);
+            }
+          };
+          c.fillStyle = 'rgba(36,31,28,.5)'; strands(1, 1);
+          c.fillStyle = web; strands(0, 0);
+          const sx = 10 + Math.round(Math.sin(t * 1.3 + p.phase) * 2);
+          const sy = -PXH + 6 + Math.round(Math.sin(t * 0.7 + p.phase) * 1.5);
+          c.fillStyle = 'rgba(36,31,28,.5)'; c.fillRect(sx + 1, -PXH - 6, 1, sy + PXH + 6);
+          c.fillStyle = web; c.fillRect(sx, -PXH - 6, 1, sy + PXH + 6);
+          c.fillStyle = INK; c.fillRect(sx - 1, sy, 3, 3);
+          c.fillRect(sx - 3, sy - 1, 2, 1); c.fillRect(sx + 2, sy - 1, 2, 1); c.fillRect(sx - 3, sy + 1, 2, 1); c.fillRect(sx + 2, sy + 1, 2, 1); c.fillRect(sx - 3, sy + 3, 2, 1); c.fillRect(sx + 2, sy + 3, 2, 1);
+          c.fillStyle = '#de4b40'; c.fillRect(sx, sy + 1, 1, 1);
+          break;
+        }
         case 'wave': {
           const wave = Math.sin(t * 8 + p.phase) > 0 ? 0 : 2;
           paw(6, top - 4 - wave);
@@ -3090,7 +3121,10 @@
       }
 
       let top = y;
-      if ((p.mode === 'work' || p.mode === 'door') && !p.path.length) {
+      if (s.stuck && p.mode === 'work' && !p.path.length) {
+        // how long it has been stuck, in the colour of trouble
+        top = pill(this.stuckText ? this.stuckText(s.stuck) : '⏳ ' + s.stuck + 'm', '#fff', STATUS_COLOR.error, y - 12);
+      } else if ((p.mode === 'work' || p.mode === 'door') && !p.path.length) {
         const col = STATUS_COLOR[st] || '#888';
         if (st === 'thinking') {
           c.fillStyle = pal.bubble;
@@ -3354,7 +3388,7 @@
 
       c.save();
       c.globalCompositeOperation = 'lighter';
-      if (!skyColor().night) {
+      if (!this.skyNow().night) {
         for (const x of this.plan.windows) {
           this.poly([P(x, 0, 0.85), P(x + 1.5, 0, 0.85), P(x + 1.5, 0, 2.0), P(x, 0, 2.0)], 'rgba(110,140,180,.38)');
           this.poly([P(x, 0.05), P(x + 1.5, 0.05), P(x + 2.05, 1.5), P(x + 0.55, 1.5)], 'rgba(255,240,205,.11)');
@@ -3373,6 +3407,80 @@
         });
       }
       c.restore();
+    }
+
+    // The sky as it is now. `nightOverride` is for looking at the night at
+    // any hour.
+    skyNow() {
+      if (this.nightOverride) return { sky: '#1d2747', night: true, lamps: true };
+      return skyColor();
+    }
+
+    // Where the lamps hang: an even grid over whatever room this is.
+    lamps() {
+      const { W, D } = this.plan;
+      if (this.lampsFor !== this.plan) {
+        const nx = Math.max(1, Math.round(W / 5)), ny = Math.max(1, Math.round(D / 4.6));
+        this.lampList = [];
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) this.lampList.push([(i + 0.5) * W / nx, (j + 0.5) * D / ny]);
+        this.lampsFor = this.plan;
+      }
+      return this.lampList;
+    }
+
+    // After dark the lamps are on. The room is dimmed a little, the way a
+    // lit room is at night against a black window, and each lamp lays a
+    // pool of warm light on what is under it. At dusk, half of that.
+    nightLights(occupant) {
+      const c = this.ctx;
+      const P = (x, y, z) => this.iso(x, y, z);
+      const night = this.skyNow().night;
+      const k = night ? 1 : 0.5;
+      c.save();
+      // source-atop touches only what has been drawn, so nothing spills
+      // past the edge of the floor
+      c.globalCompositeOperation = 'source-atop';
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = `rgba(10,14,40,${(this.pal.dark ? 0.3 : 0.44) * k})`;
+      c.fillRect(0, 0, this.buf.width, this.buf.height);
+      c.restore();
+      c.save();
+      c.globalCompositeOperation = 'source-atop';
+      for (const [lx, ly] of this.lamps()) {
+        this.art(P(lx, ly, 0), (g) => {
+          // seven thin rings, so the pool fades instead of stepping
+          for (let i = 0; i < 7; i++) pxDisc(g, 0, 0, 56 - i * 8, 29 - i * 4, `rgba(255,${200 + i * 6},${125 + i * 11},${0.052 * k})`);
+        });
+      }
+      // and whoever is still at it has their own light
+      const [a, b2, c2, d2] = this.sceneArt.glow || ['110,150,255', '130,170,255', '170,205,255', '220,235,255'];
+      for (const [dk, p] of occupant) {
+        if (p.mode !== 'work' || p.path.length) continue;
+        this.art(P((dk.x + 0.7 + dk.seat.x) / 2, (dk.y + 0.4 + dk.seat.y) / 2, 0.75), (g) => {
+          pxDisc(g, 0, 0, 20, 11, `rgba(${a},${0.1 * k})`);
+          pxDisc(g, 0, 0, 12, 7, `rgba(${b2},${0.12 * k})`);
+          pxDisc(g, 0, 0, 6, 3, `rgba(${c2},${0.12 * k})`);
+        });
+      }
+      c.restore();
+      // the lamps themselves, hanging over the room
+      const paper = this.sceneArt.lamp === 'paper';
+      for (const [lx, ly] of this.lamps()) {
+        this.art(P(lx, ly, 2.15), (g) => {
+          g.fillStyle = INK_HEX; g.fillRect(0, -10, 1, 10);
+          if (paper) {
+            g.fillRect(-4, -1, 9, 10);
+            g.fillStyle = '#ffe2a8'; g.fillRect(-3, 0, 7, 8);
+            g.fillStyle = '#fff6dc'; g.fillRect(-1, 2, 3, 4);
+            g.fillStyle = '#b8323a'; g.fillRect(-4, -1, 9, 1); g.fillRect(-4, 8, 9, 1);
+          } else {
+            g.fillRect(-6, -1, 13, 6);
+            g.fillStyle = '#4a4e55'; g.fillRect(-5, 0, 11, 3);
+            g.fillStyle = '#ffe2a8'; g.fillRect(-4, 3, 9, 2);
+            g.fillStyle = '#fff6dc'; g.fillRect(-2, 4, 5, 1);
+          }
+        });
+      }
     }
 
     // Advance people and the cat; shared by the 2D and 3D renderers.
@@ -3443,6 +3551,7 @@
       }
       this.pingPongBall();
       if (this.lunch) this.lightsOut(occupant);
+      else if (this.skyNow().lamps) this.nightLights(occupant);
 
       // Blow the buffer back up with nearest-neighbour: this is the step that
       // turns the whole scene into pixels, not just the cats.
@@ -3595,6 +3704,7 @@
         },
       },
       glow: ['255,170,90', '255,190,110', '255,210,140', '255,235,190'],
+      lamp: 'paper',
       emoji: { cut: '⚔️', dummy: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
 
       buildPlan(nWorking) {
@@ -4702,6 +4812,7 @@
         },
       },
       glow: ['255,170,90', '255,190,110', '255,210,140', '255,235,190'],
+      lamp: 'paper',
       emoji: { milk: '🥛', massage: '💆', sauna: '♨️', dip: '♨️', meeting: '🍵', beanbag: '💤', sink: '🫧', vending: '🥤' },
 
       buildPlan(nWorking) {

@@ -148,6 +148,26 @@
   .today-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; }
   .today-row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .today-note { margin-top: 12px; line-height: 1.5; }
+  .report-open { width: 100%; margin-top: 12px; justify-content: center; }
+  .report-back { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.4); }
+  .report-back[hidden] { display: none; }
+  .report { width: min(460px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 20px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: 0 18px 50px rgba(0,0,0,.28); }
+  .report h2 { margin: 0; font-size: 18px; }
+  .report .sub { margin: 3px 0 14px; font-size: 12px; color: var(--muted); }
+  .report .big { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .report .big div { padding: 10px 6px; border: 1px solid var(--line); border-radius: 10px; text-align: center; }
+  .report .big b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .report .big span { font-size: 11px; color: var(--muted); }
+  .report .mvp { display: flex; align-items: center; gap: 14px; margin: 14px 0 8px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--waiting) 14%, var(--panel)); }
+  .report .mvp canvas { flex: none; width: 76px; height: 84px; image-rendering: pixelated; }
+  .report .mvp b { display: block; font-size: 16px; margin: 2px 0; }
+  .report .mvp small { display: block; font-size: 12px; color: var(--muted); }
+  .report .row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .report .row b { font-weight: 600; }
+  .report .row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .report .head { margin: 14px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .report .bye { margin-top: 14px; font-size: 13px; }
+  .report .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .ctx { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); }
   .ctx .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
   .ctx .bar i { display: block; height: 100%; border-radius: 2px; background: var(--done); }
@@ -506,7 +526,7 @@ function applyLang(code) {
   if (typeof renderLangMenu === 'function') { renderLangMenu(); renderSceneMenu(); }
   if (typeof office !== 'undefined' && office) {
     office.offDutyLabel = L.wentHome;
-    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
+    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort;
   }
   if (typeof syncControls === 'function') syncControls();
   if (typeof renderVersion === 'function') renderVersion();
@@ -569,6 +589,9 @@ const LUNCH_PREVIEW = (() => {
   const v = q.get('lunch');
   return v === 'eat' || v === 'nap' ? v : true;
 })();
+// ?night shows the lamps at any hour, ?report opens the day's report.
+const NIGHT_PREVIEW = new URLSearchParams(location.search).has('night');
+const REPORT_PREVIEW = new URLSearchParams(location.search).has('report');
 if (PIP) document.body.classList.add('pip');
 
 // ?view=office sets the prefs.
@@ -688,8 +711,116 @@ function renderToday() {
     ${agents.map(([a, v]) => `<div class="today-row">${agentLogo(a)}${esc(AGENT_NAME[a] || a)}<span class="n">${v.turns} ${esc(L.turnsL)} · ${fmtTokens(v.tokens)}</span></div>`).join('')}
     ${projects.length ? `<div class="today-head">${esc(L.topProjects)}</div>` : ''}
     ${projects.map(([p, n]) => `<div class="today-row">${esc(p)}<span class="n">${n} ${esc(L.turnsL)}</span></div>`).join('')}
-    <div class="today-note">${esc(L.summaryNote)}</div>`;
+    <div class="today-note">${esc(L.summaryNote)}</div>
+    <button type="button" class="btn report-open" id="reportOpen">📋 ${esc(RL().open)}</button>`;
 }
+
+// ---- the day's report: what the office got through today, on one card
+const RL = () => L.rep || I18N.en.rep;
+const REPORT_AT = 18 * 60;   // minutes after midnight at which the report is announced
+function reportData() {
+  const t = state.data.summary || {};
+  const ss = (state.data.sessions || []).filter((s) => !s.subagent && s.today && (s.today.turns || s.today.tokens));
+  const top = (list, f) => list.slice().sort((a, b) => f(b) - f(a))[0] || null;
+  const full = (s) => s.context.used / (s.context.window || 200000);
+  const projects = new Map();
+  for (const s of ss) {
+    const k = nameFor(s) || s.project || '—';
+    const p = projects.get(k) || { turns: 0, tokens: 0 };
+    p.turns += s.today.turns || 0; p.tokens += s.today.tokens || 0;
+    projects.set(k, p);
+  }
+  return {
+    day: t.day || '', turns: t.turns || 0, tokens: t.tokens || 0, cats: ss.length,
+    done: ss.filter((s) => s.status === 'done').length,
+    busiest: top(ss, (s) => s.today.tokens || 0),
+    chatty: top(ss, (s) => s.today.turns || 0),
+    fullest: top(ss.filter((s) => s.context && s.context.used), full),
+    stuck: top(ss.filter((s) => s.stuck), (s) => s.stuck),
+    projects: [...projects.entries()].sort((a, b) => b[1].tokens - a[1].tokens || b[1].turns - a[1].turns),
+  };
+}
+const reportWho = (s) => nameFor(s) || s.title || s.project || '—';
+const reportPct = (s) => Math.round((100 * s.context.used) / (s.context.window || 200000));
+function reportText(d) {
+  const R = RL();
+  const out = [`${L.title} ${R.title} ${d.day}`];
+  if (!d.cats) return out.concat(R.none).join('\n');
+  out.push(`${d.turns} ${L.turnsL}・${fmtTokens(d.tokens)} ${L.tokensL}・${R.cats} ${d.cats}・${R.done} ${d.done}`);
+  if (d.busiest) out.push(`${R.mvp}：${reportWho(d.busiest)}（${fmtTokens(d.busiest.today.tokens || 0)} ${L.tokensL}）`);
+  if (d.chatty) out.push(`${R.chatty}：${reportWho(d.chatty)}（${d.chatty.today.turns || 0} ${L.turnsL}）`);
+  if (d.fullest) out.push(`${R.fullest}：${reportWho(d.fullest)}（${reportPct(d.fullest)}%）`);
+  if (d.stuck) out.push(`${R.stuck}：${reportWho(d.stuck)}（${L.stuck(d.stuck.stuck)}）`);
+  out.push(`${R.projects}：`);
+  for (const [p, v] of d.projects) out.push(`- ${p}：${v.turns} ${L.turnsL}・${fmtTokens(v.tokens)}`);
+  out.push(R.bye);
+  return out.join('\n');
+}
+function openReport() {
+  const R = RL(), d = reportData();
+  let back = document.getElementById('reportBack');
+  if (!back) {
+    back = document.createElement('div');
+    back.id = 'reportBack';
+    back.className = 'report-back';
+    back.addEventListener('click', (e) => {
+      if (e.target === back || e.target.closest('[data-r=close]')) { back.hidden = true; return; }
+      const cp = e.target.closest('[data-r=copy]');
+      if (cp && navigator.clipboard) navigator.clipboard.writeText(reportText(reportData())).then(() => { cp.textContent = RL().copied; }, () => {});
+    });
+    document.body.appendChild(back);
+  }
+  const row = (icon, label, s, val) => (s ? `<div class="row"><span>${icon} ${esc(label)}</span><b>${esc(reportWho(s))}</b><span class="n">${esc(val)}</span></div>` : '');
+  back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(R.title)}">
+    <h2>📋 ${esc(R.title)}</h2>
+    <div class="sub">${esc(L.title)}・${esc(d.day)}</div>
+    ${!d.cats ? `<div class="sub">${esc(R.none)}</div>` : `
+    <div class="big">
+      <div><b>${d.turns}</b><span>${esc(L.turnsL)}</span></div>
+      <div><b>${fmtTokens(d.tokens)}</b><span>${esc(L.tokensL)}</span></div>
+      <div><b>${d.cats}</b><span>${esc(R.cats)}</span></div>
+      <div><b>${d.done}</b><span>${esc(R.done)}</span></div>
+    </div>
+    ${d.busiest ? `<div class="mvp"><canvas id="reportCat" width="19" height="21"></canvas><div><small>🏆 ${esc(R.mvp)}</small><b>${esc(reportWho(d.busiest))}</b><small>${fmtTokens(d.busiest.today.tokens || 0)} ${esc(L.tokensL)}・${d.busiest.today.turns || 0} ${esc(L.turnsL)}</small></div></div>` : ''}
+    ${row('🔁', R.chatty, d.chatty, d.chatty ? (d.chatty.today.turns || 0) + ' ' + L.turnsL : '')}
+    ${row('🧠', R.fullest, d.fullest, d.fullest ? reportPct(d.fullest) + '%' : '')}
+    ${row('🕸️', R.stuck, d.stuck, d.stuck ? L.stuck(d.stuck.stuck) : '')}
+    <div class="head">${esc(R.projects)}</div>
+    ${d.projects.map(([p, v]) => `<div class="row"><span>${esc(p)}</span><span class="n">${v.turns} ${esc(L.turnsL)}・${fmtTokens(v.tokens)}</span></div>`).join('')}
+    <div class="bye">${esc(R.bye)}</div>`}
+    <div class="foot"><button type="button" class="btn" data-r="copy">${esc(R.copy)}</button><button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
+  </div>`;
+  back.hidden = false;
+  // the busiest cat, as it looks in the office
+  const cv = document.getElementById('reportCat');
+  if (cv && window.OfficeCats && d.busiest) {
+    const p = office && office.people && office.people.get(d.busiest.key);
+    const breed = (p && p.breed) || window.OfficeCats.breeds[0];
+    cv.width = window.OfficeCats.W; cv.height = window.OfficeCats.H;
+    cv.getContext('2d').drawImage(window.OfficeCats.sprite(breed, false, true, 'open', false), 0, 0);
+  }
+}
+// Once a day, after REPORT_AT, say that the report is ready.
+function reportClock() {
+  if (PIP) return;
+  const now = new Date();
+  if (now.getHours() * 60 + now.getMinutes() < REPORT_AT) return;
+  const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  if (store.get('reportDay', '') === day) return;
+  const t = state.data && state.data.summary;
+  if (!t || !t.agents) return;
+  store.set('reportDay', day);
+  toast(RL().ready, () => openReport());
+}
+document.getElementById('todayPanel').addEventListener('click', (e) => {
+  if (!e.target.closest('#reportOpen')) return;
+  closeMenus();
+  openReport();
+});
+document.addEventListener('keydown', (e) => {
+  const back = document.getElementById('reportBack');
+  if (e.key === 'Escape' && back) back.hidden = true;
+});
 
 function card(s, now) {
   const project = nameFor(s) || (s.cwd ? s.cwd : '—');
@@ -973,7 +1104,7 @@ function nameFor(s) {
 
 // A line of text at the bottom of the page that goes away by itself.
 let toastTimer = 0;
-function toast(text) {
+function toast(text, onClick) {
   let el = document.getElementById('toast');
   if (!el) {
     el = document.createElement('div');
@@ -982,6 +1113,9 @@ function toast(text) {
     document.body.appendChild(el);
   }
   el.textContent = text;
+  el.onclick = onClick || null;
+  el.style.cursor = onClick ? 'pointer' : '';
+  el.style.pointerEvents = onClick ? 'auto' : '';
   el.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), 5200);
@@ -1044,8 +1178,9 @@ async function makeOffice() {
   const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent, scene: state.scene });
   office = mine;
   office.offDutyLabel = L.wentHome;
-  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
+  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow }; office.stuckText = L.stuckShort || I18N.en.stuckShort;
   if (LUNCH_PREVIEW != null) office.lunchOverride = LUNCH_PREVIEW;
+  if (NIGHT_PREVIEW) office.nightOverride = true;
   office.setInset(panelInset(), false);
   render();
   await mine.ready;
@@ -1438,6 +1573,9 @@ if (state.full) {
 }
 
 setInterval(tickTimes, 1000);
+setInterval(reportClock, 30 * 1000);
+setTimeout(reportClock, 6000);
+if (REPORT_PREVIEW) setTimeout(openReport, 2500);
 </script>
 </body>
 </html>
