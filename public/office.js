@@ -19,7 +19,7 @@
   // Petting the office cat. A stroke is a click, or PET_RUB screen pixels of
   // the mouse moving over it. It purrs for PET_GLOW after the last stroke,
   // stays put for PET_STAY, and rolls over after PET_BELLY strokes.
-  const SHUT_ACTS = new Set(['sun', 'zen', 'fall']);   // things done with the eyes closed
+  const SHUT_ACTS = new Set(['sun', 'zen', 'fall', 'soak', 'dip', 'massage']);   // things done with the eyes closed
   const PET_KEY = 'pet:cat';
   const PET_RUB = 26, PET_GLOW = 2600, PET_STAY = 7000, PET_BELLY = 10;
   const PET_HEART = [[1, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [2, 3]];
@@ -363,8 +363,8 @@
   // context is, how many tokens it has used today, how many turns it has
   // taken. Every scene has a place for each. The office lifts, runs and
   // spins; a scene says the same three things in its own way.
-  const STAT_OF = { lift: 'ctx', treadmill: 'tok', wheel: 'turns', fall: 'ctx', dummy: 'tok', cut: 'turns', chips: 'ctx', spin: 'turns' };
-  const TURN_ICON = { cut: '🎋 ', spin: '🎡 ' };
+  const STAT_OF = { lift: 'ctx', treadmill: 'tok', wheel: 'turns', fall: 'ctx', dummy: 'tok', cut: 'turns', chips: 'ctx', spin: 'turns', sauna: 'ctx', massage: 'tok', milk: 'turns' };
+  const TURN_ICON = { cut: '🎋 ', spin: '🎡 ', milk: '🥛 ' };
   const cutRate = (s) => 0.34 + turnTier(s) * 0.07;   // strokes a second at the bamboo
 
   function gymStat(act, s) {
@@ -2701,6 +2701,8 @@
       if (st.act === 'foosball') x += Math.sin(t * 5 + p.phase) * 1.5;
       // under the fall with a context nearly full, it shivers
       if (st.act === 'fall' && ctxPct(s) >= 0.85 && Math.sin(t * 40) > 0) x += ART;
+      // in the massage chair it is shaken, harder the more tokens it has been through today
+      if (st.act === 'massage' && Math.sin(t * (9 + tokTier(s) * 7)) > 0) x += ART;
       const sc = 1;
       c.save();
       c.translate(x, y);
@@ -2966,6 +2968,38 @@
           const k = Math.sin(t * (2 + turnTier(s) * 1.2) + p.phase) > 0;
           paw(8, top - 7 + (k ? 6 : 0));
           paw(-7, top + 3);
+          break;
+        }
+        case 'soak':
+        case 'dip': {
+          // in the water, a folded towel on its head
+          prop(-3, -PXH + 1, 6, 2, '#ffffff');
+          break;
+        }
+        case 'scrub': {
+          const k = Math.sin(t * 9 + p.phase) > 0 ? 0 : 2;
+          paw(-9, top - 6 + k); paw(7, top - 4 - k);
+          break;
+        }
+        case 'milk': {
+          // A bottle of milk after the bath, tipped back and lowered: the
+          // more turns today, the quicker it goes down.
+          const up = Math.sin(t * (1.1 + turnTier(s) * 0.45) + p.phase) > 0.1;
+          const by2 = up ? top - 7 : top - 1;
+          paw(5, by2 + 5);
+          prop(6, by2, 3, 5, '#fbfbf5');
+          c.fillStyle = '#3b8ee0'; c.fillRect(6, by2, 3, 1);
+          break;
+        }
+        case 'sauna': {
+          // sweat, more of it the fuller the context, and a towel on its head
+          const n = 1 + Math.round(ctxPct(s) * 4);
+          c.fillStyle = '#7fc4ff';
+          for (let i = 0; i < n; i++) {
+            const a = (((t * 0.9 + i * 0.23 + p.phase) % 1) + 1) % 1;
+            c.fillRect((i % 2 ? 8 : -9) + (i > 1 ? (i % 2 ? 2 : -2) : 0), pxFloor(-PXH + 4 + a * 9), 1, 2);
+          }
+          prop(-3, -PXH + 1, 6, 2, '#ffffff');
           break;
         }
         case 'kit:yarn': {
@@ -3459,6 +3493,42 @@
         y0: h.y0 * z + this.cam.oy, y1: h.y1 * z + this.cam.oy,
       }));
     }
+  }
+
+  // What more than one scene lays on its floor.
+  function floorTools(o, P, dot, STEP) {
+    const pal = o.pal;
+    const rect = (x0, y0, x1, y1, fill, stroke) => o.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], fill, stroke);
+    const fleck = (x0, y0, x1, y1, lt, dk, a, b, n) => {
+      let i = 0;
+      for (let y = y0 + STEP / 2; y < y1; y += STEP, i++) {
+        let j = 0;
+        for (let x = x0 + STEP / 2; x < x1; x += STEP, j++) {
+          const k = (i * a + j * b) % n;
+          if (k === 0) dot(P(x, y), lt); else if (k === (n >> 1)) dot(P(x, y), dk);
+        }
+      }
+    };
+    // mats two tiles by one, laid like bricks, each with its cloth border
+    const tatami = (x0, x1, y0, y1) => {
+      const base = pal.carpet, alt = o.tint(base, pal.dark ? 5 : -6);
+      const edge = pal.rugEdge, weave = o.tint(base, pal.dark ? -8 : -12);
+      let row = 0;
+      for (let y = y0; y < y1 - 1e-6; y += 1, row++) {
+        const yb = Math.min(y1, y + 1);
+        let col = 0;
+        for (let x = x0 - (row % 2); x < x1; x += 2, col++) {
+          const xa = Math.max(x0, x), xb = Math.min(x1, x + 2);
+          if (xb - xa < 0.05) continue;
+          o.poly([P(xa, y), P(xb, y), P(xb, yb), P(xa, yb)], (col + row) % 2 ? base : alt);
+          for (let v = y + STEP * 2; v < yb - STEP; v += STEP * 3) o.seg(P(xa + 0.06, v), P(xb - 0.06, v), weave);
+          o.seg(P(xa, y), P(xa, yb), edge);
+          o.seg(P(xa, y), P(xb, y), edge);
+        }
+      }
+      rect(x0, y0, x1, y1, null, edge);
+    };
+    return { rect, fleck, tatami };
   }
 
   // ------------------------------------------------------------ scenes
@@ -4539,6 +4609,493 @@
             }
           });
         }
+      },
+    },
+
+    // A hot-spring inn. Nobody works here either: they bathe. Each cat has a
+    // wooden tub of its own in the bath hall. Thinking is soaking with a
+    // towel on its head; running a tool is scrubbing; writing a reply is
+    // done on a tray that floats in front of it. The lantern by the tub
+    // burns the colour of what it is doing. Outside is the big pool; inside
+    // the inn are the milk, the massage chairs, table tennis, supper and bed.
+    // The three numbers: the sauna is the context, the massage chair the
+    // day's tokens, the bottles of milk its turns.
+    onsen: {
+      palette: {
+        light: {
+          wood1: '#d6b98c', wood2: '#cdaf80', woodLine: 'rgba(110,80,40,.13)',
+          tileA: '#d3dada', tileB: '#c3cccd', carpet: '#cfc98f', carpetLine: 'rgba(0,0,0,.04)',
+          wallL: '#f3ecdc', wallR: '#e7dfcb', wallTop: '#7a5a40', trim: '#7a5a40',
+          deskTop: '#c9995f', deskL: '#a97c4a', deskR: '#8f673c',
+          chair: '#b8323a', rug: '#cfc98f', rugEdge: '#3f5a45', couch: '#3f4f7a', couchD: '#33416a',
+          counter: '#b98a58', counterL: '#9c7146', counterR: '#84603a', metal: '#8d939a',
+          glass: 'rgba(250,240,215,.34)', glassEdge: '#7a5a40', mat: '#b9c08c', pot: '#39536b',
+        },
+        dark: {
+          wood1: '#5a4630', wood2: '#53402b', woodLine: 'rgba(0,0,0,.24)',
+          tileA: '#474d50', tileB: '#3e4447', carpet: '#4a4a30', carpetLine: 'rgba(255,255,255,.04)',
+          wallL: '#4b463c', wallR: '#403b33', wallTop: '#33261b', trim: '#33261b',
+          deskTop: '#7a5c38', deskL: '#62492c', deskR: '#503b23',
+          chair: '#8a262c', rug: '#4a4a30', rugEdge: '#263a2c', couch: '#33406a', couchD: '#293458',
+          counter: '#6a4e30', counterL: '#553e26', counterR: '#45321e', metal: '#6b7075',
+          glass: 'rgba(200,190,165,.22)', glassEdge: '#33261b', mat: '#4a5236', pot: '#2b3f52',
+        },
+      },
+      emoji: { milk: '🥛', massage: '💆', sauna: '♨️', dip: '♨️', meeting: '🍵', beanbag: '💤', sink: '🫧', vending: '🥤' },
+
+      buildPlan(nWorking) {
+        const pal = this.pal;
+        const COLS = 4;
+        const rows = Math.max(2, Math.ceil((nWorking + 2) / COLS));
+        const LX = 6.4;                           // the inn, then the baths
+        const W = LX + 11.2;
+        const BH = 2.2 + (rows - 1) * 2.1 + 1.2;  // the bath hall, then the open air
+        const D = BH + 5.0;
+        const grid = new Grid(W, D);
+        const items = [], pois = [], desks = [];
+        const add = (depth, draw, live = false, state = null) => items.push({ depth, draw, live, state });
+        const solid = (x, y, w, d, pad) => grid.block(x, y, w, d, pad);
+        const poi = (x, y, act, face, opt = {}) => { pois.push({ x, y, act, face, sit: 0, ...opt }); return pois[pois.length - 1]; };
+
+        // ---- the bath hall: a tub each, in rows. The cat sits in the
+        // middle of its tub, so its place and its seat are the same spot.
+        for (let r = 0; r < rows; r++) {
+          for (let k = 0; k < COLS; k++) {
+            const tx = LX + 1.5 + k * 2.5, ty = 2.2 + r * 2.1;
+            desks.push({ x: tx - 0.7, y: ty + 0.1, side: 'n', seat: { x: tx, y: ty } });
+            solid(tx - 0.5, ty - 0.4, 1.0, 0.8, 0.03);
+          }
+        }
+        // somewhere to wash first, along the back wall
+        for (let k = 0; k < 3; k++) {
+          const wx = LX + 0.9 + k * 1.3;
+          add(wx + 0.25 + 0.5, () => this.washPlace(wx, 0.3));
+          solid(wx, 0.3, 0.5, 0.35, 0.02);
+          poi(wx + 0.25, 1.05, 'sink', 'back');
+        }
+        const windows = [LX + 4.9, LX + 7.1];
+        const mural = { x0: LX + 0.5, x1: LX + 4.6 };
+
+        // ---- the open air: the big pool, the sauna, a lantern, bamboo
+        const pool = { x0: LX + 1.3, x1: W - 3.4, y0: BH + 1.0, y1: D - 0.9 };
+        solid(pool.x0, pool.y0, pool.x1 - pool.x0, pool.y1 - pool.y0, 0.02);
+        for (const [u, v] of [[1.3, 1.0], [3.3, 2.0], [5.2, 1.1]]) {
+          const q = poi(pool.x0 + u, pool.y0 + v, 'dip', 'front', { sit: 0.01 });
+          add(q.x + q.y + 0.05, () => this.poolLip(q), true);
+        }
+        add((pool.x0 + pool.x1) / 2 + pool.y1 + 0.3, () => this.poolSteam(pool), true);
+        const sa = { x: W - 2.7, y: BH + 1.0 };
+        {
+          const q = poi(sa.x + 0.9, sa.y + 0.55, 'sauna', 'front', { sit: 0.36 });
+          add(sa.x + 1.1 + sa.y + 0.2, () => this.sauna(sa.x, sa.y, q), () => !!this.userOf(q));
+          add(sa.x + 1.95 + sa.y + 0.6, () => this.saunaStove(sa.x + 1.65, sa.y + 0.25, q), true);
+          solid(sa.x, sa.y, 2.3, 0.14, 0.02);
+          solid(sa.x, sa.y, 0.14, 1.6, 0.02);
+          solid(sa.x + 0.2, sa.y + 0.2, 1.4, 0.5, 0.02);
+          solid(sa.x + 1.65, sa.y + 0.25, 0.5, 0.5, 0.02);
+        }
+        for (const sy of [BH + 1.6, BH + 2.9]) {
+          const sx = LX + 0.55;
+          add(sx + sy - 0.3, () => this.cushion(sx, sy));
+          poi(sx, sy, 'sun', 'front', { sit: 0.06, sleepy: true });
+        }
+        add(W - 0.8 + D - 0.8, () => this.lantern(W - 0.8, D - 0.8));
+        solid(W - 1.05, D - 1.05, 0.5, 0.5, 0.02);
+        for (const [bx, by] of [[W - 0.6, BH + 0.45], [W - 3.0, D - 0.45]]) {
+          add(bx + by, () => this.bamboo(bx, by));
+          solid(bx - 0.3, by - 0.25, 0.6, 0.5, 0.02);
+        }
+
+        // ---- between the inn and the baths: a low wall, and a curtained way through
+        const gate = { y0: 2.7, y1: 3.9 };
+        const wall = (y0, y1) => {
+          for (let y = y0; y < y1 - 0.01; y += 1) {
+            const d = Math.min(1, y1 - y);
+            add(LX + y + d / 2 + 0.02, () => this.box(LX - 0.06, y, 0, 0.12, d, 1.0, this.shade(pal.deskTop, 10), pal.deskL, pal.deskR));
+          }
+          solid(LX - 0.08, y0, 0.16, y1 - y0, 0.03);
+        };
+        wall(0, gate.y0);
+        wall(gate.y1, BH + 0.6);
+        add(LX + (gate.y0 + gate.y1) / 2 + 0.04, () => this.norenGate(LX, gate.y0, gate.y1));
+
+        // ---- the inn, back to front: milk and massage, table tennis, supper, bed
+        add(0.6 + 0.42 + 0.2 + 0.4, () => this.fridge(0.6, 0.2));
+        solid(0.6, 0.2, 0.85, 0.75);
+        add(1.6 + 0.3 + 0.3 + 0.3, () => this.milkCrate(1.6, 0.3));
+        solid(1.6, 0.3, 0.6, 0.45, 0.02);
+        poi(1.1, 1.45, 'milk', 'front');
+        for (const cx of [2.9, 4.3]) {
+          add(cx + 0.4 + 0.3 + 0.2, () => this.massageChair(cx, 0.3));
+          solid(cx, 0.3, 0.8, 0.3, 0.02);
+          poi(cx + 0.4, 0.9, 'massage', 'front', { sit: 0.32 });
+        }
+        {
+          const bx = 5.4, by = 0.45;
+          add(bx + by + 0.2, () => this.cardboard(bx, by, false));
+          add(bx + by + 1.3, () => this.cardboard(bx, by, true));
+          solid(bx, by, 0.8, 0.7, 0.02);
+          poi(bx + 0.4, by + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
+        }
+        const tx = 1.5, ty = 3.2;
+        add(tx + 1.3 + ty + 0.7, () => this.pingpong(tx, ty));
+        solid(tx, ty, 2.6, 1.4, 0.05);
+        poi(tx - 0.55, ty + 0.7, 'pingpong', 'side', { pair: 'pp' });
+        poi(tx + 3.15, ty + 0.7, 'pingpong', 'side', { pair: 'pp' });
+        const pp = { x0: tx - 0.2, x1: tx + 2.8, y: ty + 0.7 };
+        {
+          const dx = 3.6, dy2 = 6.0;
+          add(dx + 0.7 + dy2 + 0.4, () => this.supper(dx, dy2));
+          solid(dx, dy2, 1.4, 0.8, 0.03);
+          const seats = [[dx + 0.7, dy2 - 0.4, 'front'], [dx + 0.7, dy2 + 1.2, 'back'], [dx - 0.4, dy2 + 0.4, 'front'], [dx + 1.8, dy2 + 0.4, 'front']];
+          seats.forEach(([sx, sy, face], i) => {
+            add(sx + sy - 0.3, () => this.zabuton(sx, sy, i % 2 ? pal.couch : pal.chair));
+            poi(sx, sy, 'meeting', face, { sit: 0.06 });
+          });
+        }
+        for (let k = 0; k < 3; k++) {
+          const fx = 3.7 + k * 0.9, fy = D - 1.9;
+          add(fx + 0.37 + fy + 0.3, () => this.futon(fx, fy, k));
+          poi(fx + 0.37, fy + 0.95, 'beanbag', 'front', { sit: 0.1, sleepy: true });
+        }
+        const vy = 6.3;
+        add(0.5 + vy + 0.4, () => this.vending(0.12, vy, '#2f8a6a'));
+        add(0.5 + vy + 0.41, () => this.vendingLight(0.12, vy), true);
+        solid(0.1, vy, 0.75, 0.75);
+        poi(1.3, vy + 0.4, 'vending', 'back');
+
+        // ---- the way in
+        const dy = D - 1.2;
+        const wait = {
+          x0: 0.95, x1: 3.3, y0: dy - 0.8, y1: dy + 1.0,
+          spots: [{ x: 1.4, y: dy - 1.45, act: 'scratch' }],
+        };
+        for (const yy of [dy + 0.5, dy - 0.35]) for (const xx of [1.45, 2.2, 2.95]) wait.spots.push({ x: xx, y: yy });
+        add(0.45 + dy - 1.35 + 0.1, () => this.scratchPost(0.45, dy - 1.35), false, () => this.scratch || 0);
+        solid(0.2, dy - 1.6, 0.5, 0.5, 0.03);
+
+        const posters = [{ y: 2.2, w: 3.8, color: '#f2c230', ink: '#3b2a12', text: 'WANIN' }];
+        return {
+          W, D, OW: LX, OD: BH, MR: BH, PY: BH, RW: W - LX, LX, BH, pool, sa, mural, gate,
+          grid, items, props: [], pois, desks, windows, posters, pp, gym: null, mats: [], wait,
+          door: { x: 0.4, y: D - 1.2 }, seatZ: 0.1,
+        };
+      },
+
+      paintFloor({ P, dot, STEP, planks }) {
+        const pal = this.pal, { W, D, LX, BH, pool, sa, pp } = this.plan;
+        const { rect, fleck, tatami } = floorTools(this, P, dot, STEP);
+        // the inn: mats, flags at the door, a mat under the table tennis
+        tatami(0, LX, 0, D);
+        for (let i = 0; i < 7; i++) {
+          for (let j = 0; j < 6; j++) {
+            const x = i / 2, y = D - 3.0 + j / 2;
+            const base = (i + j) % 2 ? pal.tileA : pal.tileB;
+            rect(x, y, x + 0.5, y + 0.5, base);
+            this.seg(P(x, y), P(x + 0.5, y), this.tint(base, 10), 0, 1);
+            this.seg(P(x + 0.5, y), P(x + 0.5, y + 0.5), this.tint(pal.tileB, -16));
+          }
+        }
+        rect(pp.x0 - 0.6, pp.y - 1.3, pp.x1 + 0.6, pp.y + 1.2, pal.mat, this.tint(pal.mat, pal.dark ? 14 : -14));
+
+        // the bath hall: pale tiles, wet
+        for (let i = 0; i < Math.ceil((W - LX) * 2); i++) {
+          for (let j = 0; j < Math.ceil(BH * 2); j++) {
+            const x = LX + i / 2, y = j / 2;
+            const x1 = Math.min(W, x + 0.5), y1 = Math.min(BH, y + 0.5);
+            const base = (i + j) % 2 ? pal.tileA : pal.tileB;
+            rect(x, y, x1, y1, base);
+            this.seg(P(x, y), P(x1, y), this.tint(base, 12), 0, 1);
+            this.seg(P(x, y1), P(x1, y1), this.tint(pal.tileB, -14));
+            this.seg(P(x1, y), P(x1, y1), this.tint(pal.tileB, -14));
+            if ((i * 7 + j * 11) % 9 === 0) { const g = P(x + 0.2, y + 0.3); dot(g, '#ffffff'); dot(g, '#ffffff', 1, 0); }
+          }
+        }
+
+        // the open air: paving, boards along the inn, boards under the sauna
+        const stone = pal.dark ? '#4e4c46' : '#b9b4a6';
+        rect(LX, BH, W, D, stone);
+        fleck(LX, BH, W, D, this.tint(stone, 10), this.tint(stone, -16), 5, 11, 13);
+        for (let x = LX + 1.4; x < W - 0.3; x += 1.7) this.seg(P(x, BH), P(x + 0.3, D), this.tint(stone, -22));
+        for (let y = BH + 0.9; y < D - 0.2; y += 1.3) this.seg(P(LX, y), P(W, y + 0.2), this.tint(stone, -22));
+        planks(LX, LX + 1.0, BH, D, 91);
+        planks(sa.x, sa.x + 2.3, sa.y, sa.y + 1.7, 55);
+
+        // the pool: a ring of dark rock, the water, a paler middle
+        const rock = pal.dark ? '#34332f' : '#6f6c64';
+        const water = pal.dark ? '#2a5a66' : '#7fd0d6';
+        const oct = (x0, y0, x1, y1, k) => [P(x0 + k, y0), P(x1 - k, y0), P(x1, y0 + k), P(x1, y1 - k), P(x1 - k, y1), P(x0 + k, y1), P(x0, y1 - k), P(x0, y0 + k)];
+        this.poly(oct(pool.x0 - 0.28, pool.y0 - 0.28, pool.x1 + 0.28, pool.y1 + 0.28, 0.85), rock, this.tint(rock, -30));
+        this.poly(oct(pool.x0, pool.y0, pool.x1, pool.y1, 0.7), water, this.tint(water, -34));
+        this.poly(oct(pool.x0 + 0.5, pool.y0 + 0.45, pool.x1 - 0.5, pool.y1 - 0.45, 0.5), this.tint(water, 12));
+        const lit = this.tint(rock, 26);
+        for (let k = 0; k < 22; k++) {
+          const u = (k * 0.618) % 1, side = k % 4;
+          const x = side < 2 ? pool.x0 + 0.5 + u * (pool.x1 - pool.x0 - 1) : side === 2 ? pool.x0 - 0.16 : pool.x1 + 0.16;
+          const y = side === 0 ? pool.y0 - 0.16 : side === 1 ? pool.y1 + 0.16 : pool.y0 + 0.5 + u * (pool.y1 - pool.y0 - 1);
+          this.art(P(x, y), (c) => { c.fillStyle = lit; c.fillRect(-2, -1, 3, 1); c.fillRect(-1, -2, 2, 1); });
+        }
+        const rip = this.tint(water, 34);
+        for (const [u, v, w] of [[0.9, 0.5, 0.6], [2.6, 0.9, 0.8], [4.4, 0.6, 0.5], [1.8, 2.0, 0.7], [3.9, 2.3, 0.6], [5.4, 1.9, 0.5]]) {
+          this.seg(P(pool.x0 + u, pool.y0 + v), P(pool.x0 + u + w, pool.y0 + v), rip);
+        }
+      },
+
+      // Posts and a head rail, and a mountain painted over the washing places.
+      sceneWalls({ P }) {
+        SCENE_ART.dojo.sceneWalls.call(this, { P });
+      },
+      wallBoard() {
+        const { pal, B, edge } = this.wallKit();
+        const { x0, x1 } = this.plan.mural;
+        const sky = pal.dark ? '#3f6a8c' : '#9fd0ee';
+        this.poly([B(x0, 0.95), B(x1, 0.95), B(x1, 2.0), B(x0, 2.0)], sky, edge);
+        const mid = (x0 + x1) / 2;
+        const blue = pal.dark ? '#2f4a7a' : '#4f78b8';
+        this.poly([B(mid - 1.7, 0.95), B(mid - 0.35, 1.85), B(mid + 0.35, 1.85), B(mid + 1.7, 0.95)], blue);
+        this.poly([B(mid - 0.62, 1.67), B(mid - 0.35, 1.85), B(mid + 0.35, 1.85), B(mid + 0.62, 1.67), B(mid + 0.3, 1.6), B(mid, 1.7), B(mid - 0.3, 1.6)], '#ffffff');
+        this.art(B(x0 + 0.5, 1.75), (c) => { c.fillStyle = '#ffffff'; c.fillRect(-3, 0, 8, 2); c.fillRect(-1, -1, 4, 1); });
+        this.art(B(x1 - 0.6, 1.6), (c) => { c.fillStyle = '#ffffff'; c.fillRect(-4, 0, 7, 2); c.fillRect(-2, -1, 3, 1); });
+        this.poly([B(x0, 0.95), B(x1, 0.95), B(x1, 1.08), B(x0, 1.08)], pal.dark ? '#34554a' : '#6fae8c');
+        this.poly([B(x0, 0.95), B(x1, 0.95), B(x1, 2.0), B(x0, 2.0)], null, edge);
+      },
+      wallSign() {},
+      wallDoor() { SCENE_ART.dojo.wallDoor.call(this); },
+      glassX(add, x, y, d) { SCENE_ART.dojo.glassX.call(this, add, x, y, d); },
+      glassY(add, x, y, w) { SCENE_ART.dojo.glassY.call(this, add, x, y, w); },
+      lantern(x, y) { SCENE_ART.dojo.lantern.call(this, x, y); },
+      bamboo(x, y) { SCENE_ART.dojo.bamboo.call(this, x, y); },
+      zabuton(x, y, col) { SCENE_ART.dojo.zabuton.call(this, x, y, col); },
+
+      // ---- a tub
+      workState(p, face) {
+        const st = (p.s || {}).status;
+        return { pose: 'sit', face, act: st === 'tool' ? 'scrub' : st === 'typing' ? 'type' : 'soak', sitZ: 0.1 };
+      },
+      // The tub is drawn in two goes, so that the cat can be in it: the
+      // whole tub and its water before the cat (this), then the near side
+      // and the water in front of the cat after (desk, below).
+      chair(dk) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const cx = dk.seat.x, cy = dk.seat.y, H = 0.5;
+        const x0 = cx - 0.5, y0 = cy - 0.4;
+        this.box(x0, y0, 0, 1.0, 0.8, H, this.shade(pal.deskTop, 16), pal.deskTop, pal.deskL);
+        const water = pal.dark ? '#2a5a66' : '#7fd0d6';
+        this.poly([P(x0 + 0.08, y0 + 0.08, H - 0.07), P(x0 + 0.92, y0 + 0.08, H - 0.07), P(x0 + 0.92, y0 + 0.72, H - 0.07), P(x0 + 0.08, y0 + 0.72, H - 0.07)], water, pal.deskR);
+      },
+      desk(dk, p) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const cx = dk.seat.x, cy = dk.seat.y, H = 0.5;
+        const x0 = cx - 0.5, x1 = cx + 0.5, y0 = cy - 0.4, y1 = cy + 0.4;
+        const worker = p && p.mode === 'work' && !p.path.length ? p : null;
+        const inTub = p && !p.path.length && Math.hypot(p.x - cx, p.y - cy) < 0.1;
+        const st = worker ? worker.s.status : null;
+        const t = this.t / 1000;
+        const water = pal.dark ? '#2a5a66' : '#7fd0d6';
+        const wood = pal.deskTop, side = pal.deskL, rim = this.shade(pal.deskTop, 16);
+        // the water between the cat and the near side
+        if (inTub) {
+          this.poly([P(x0 + 0.08, cy + 0.02, H - 0.07), P(x1 - 0.08, cy + 0.02, H - 0.07), P(x1 - 0.08, y1 - 0.08, H - 0.07), P(x0 + 0.08, y1 - 0.08, H - 0.07)], water);
+          const rip = this.tint(water, 30);
+          const k = Math.sin(t * 2 + cx) > 0 ? 0.04 : 0;
+          this.seg(P(cx - 0.3, cy + 0.1 + k, H - 0.07), P(cx + 0.3, cy + 0.1 + k, H - 0.07), rip);
+          // a reply is written on a tray that floats
+          if (st === 'typing') {
+            this.art(P(cx, cy + 0.2, H - 0.07), (c) => {
+              c.fillStyle = INK_HEX; c.fillRect(-6, -2, 12, 4);
+              c.fillStyle = '#b98a58'; c.fillRect(-5, -1, 10, 2);
+              c.fillStyle = '#fbf8ee'; c.fillRect(-3, -2, 5, 2);
+              c.fillStyle = INK_HEX; c.fillRect(-2, -1, 2, 1);
+            });
+          }
+          // bubbles while it scrubs
+          if (st === 'tool') {
+            this.art(P(cx, cy + 0.15, H), (c) => {
+              c.fillStyle = '#ffffff';
+              for (let i = 0; i < 5; i++) {
+                const a = ((t * 0.9 + i * 0.21) % 1);
+                c.globalAlpha = 1 - a;
+                c.fillRect(-8 + i * 4 + Math.round(Math.sin(t * 3 + i) * 1.5), Math.round(-2 - a * 12), 2, 2);
+              }
+              c.globalAlpha = 1;
+            });
+          }
+        }
+        // the near sides, their staves and a hoop, and the rim on top
+        this.poly([P(x0, y1, 0), P(x1, y1, 0), P(x1, y1, H), P(x0, y1, H)], wood);
+        this.poly([P(x1, y0, 0), P(x1, y1, 0), P(x1, y1, H), P(x1, y0, H)], side);
+        for (let u = 0.2; u < 0.95; u += 0.2) this.seg(P(x0 + u, y1, 0), P(x0 + u, y1, H), this.tint(wood, -24));
+        for (let v = 0.2; v < 0.75; v += 0.2) this.seg(P(x1, y0 + v, 0), P(x1, y0 + v, H), this.tint(side, -22));
+        this.seg(P(x0, y1, 0.14), P(x1, y1, 0.14), '#5a5f66'); this.seg(P(x1, y0, 0.14), P(x1, y1, 0.14), '#4a4f56');
+        this.seg(P(x0, y1, 0.36), P(x1, y1, 0.36), '#5a5f66'); this.seg(P(x1, y0, 0.36), P(x1, y1, 0.36), '#4a4f56');
+        this.poly([P(x0, y1 - 0.08, H), P(x1, y1 - 0.08, H), P(x1, y1, H), P(x0, y1, H)], rim);
+        this.poly([P(x1 - 0.08, y0, H), P(x1, y0, H), P(x1, y1, H), P(x1 - 0.08, y1, H)], rim);
+        // steam, more of it with someone in
+        this.art(P(cx, cy, H), (c) => {
+          c.fillStyle = '#ffffff';
+          const n = inTub ? 4 : 2;
+          for (let i = 0; i < n; i++) {
+            const a = ((t * 0.28 + i * 0.37 + cx) % 1);
+            c.globalAlpha = (1 - a) * 0.6;
+            const sx = Math.round(-7 + i * 5 + Math.sin(a * 6 + i) * 2), sy = Math.round(-14 - a * 14);
+            c.fillRect(sx, sy, 2, 1); c.fillRect(sx + 1, sy - 1, 2, 1);
+          }
+          c.globalAlpha = 1;
+        });
+        // the lantern: the colour of what its cat is doing
+        const col = st ? STATUS_COLOR[st] || '#f2c230' : null;
+        const flick = Math.sin(this.t / 130 + cx * 3) > 0 ? 1 : 0;
+        this.art(P(x1 + 0.28, cy + 0.2, 0), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(0, -9, 1, 9); c.fillRect(-2, -1, 5, 1);
+          c.fillStyle = INK_HEX; c.fillRect(-3, -18, 7, 9);
+          c.fillStyle = col ? '#fff6dc' : pal.dark ? '#8a8472' : '#e6dfc8'; c.fillRect(-2, -17, 5, 7);
+          if (col) { c.fillStyle = col; c.fillRect(-1, -15 - flick, 3, 4); }
+          c.fillStyle = '#3a2a1e'; c.fillRect(-3, -19, 7, 1); c.fillRect(-3, -10, 7, 1);
+        });
+      },
+
+      // ---- the baths
+      // a stool, a bucket, a tap on the wall
+      washPlace(x, y) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        this.box(x + 0.05, y + 0.08, 0, 0.22, 0.22, 0.16, this.shade(pal.deskTop, 14), pal.deskTop, pal.deskL);
+        this.art(P(x + 0.4, y + 0.22, 0), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-3, -5, 6, 5);
+          c.fillStyle = '#d9b27a'; c.fillRect(-2, -4, 4, 3);
+          c.fillStyle = '#7fd0d6'; c.fillRect(-2, -4, 4, 1);
+        });
+        this.art(P(x + 0.25, 0, 0.7), (c) => { c.fillStyle = '#c9ced6'; c.fillRect(0, 0, 1, 3); c.fillRect(0, 3, 3, 1); c.fillStyle = '#de4b40'; c.fillRect(-1, -1, 1, 1); c.fillStyle = '#3b8ee0'; c.fillRect(1, -1, 1, 1); });
+      },
+      // water round the middle of whoever is in the big pool
+      poolLip(q) {
+        const p = this.userOf(q);
+        if (!p) return;
+        const water = this.pal.dark ? '#2a5a66' : '#7fd0d6';
+        const t = this.t / 1000;
+        this.art(this.iso(q.x, q.y, 0), (c) => {
+          pxDisc(c, 0, -2, 10, 4, water);
+          c.fillStyle = this.tint(water, 34);
+          const k = Math.sin(t * 2.2 + q.x) > 0 ? 1 : 0;
+          c.fillRect(-9 - k, -3, 4, 1); c.fillRect(6 + k, -2, 4, 1); c.fillRect(-3, 1, 6, 1);
+        });
+      },
+      poolSteam(pool) {
+        const t = this.t / 1000;
+        const w = pool.x1 - pool.x0, d = pool.y1 - pool.y0;
+        for (let i = 0; i < 7; i++) {
+          const a = ((t * 0.16 + i * 0.143) % 1);
+          const x = pool.x0 + 0.6 + ((i * 0.37) % 1) * (w - 1.2), y = pool.y0 + 0.5 + ((i * 0.61) % 1) * (d - 1.0);
+          this.art(this.iso(x, y, 0.2 + a * 1.3), (c) => {
+            c.globalAlpha = (1 - a) * 0.55; c.fillStyle = '#ffffff';
+            c.fillRect(-3, 0, 5, 2); c.fillRect(-1, -1, 4, 1); c.fillRect(-2, 2, 3, 1);
+            c.globalAlpha = 1;
+          });
+        }
+      },
+      // The sauna: two walls, a bench, and a thermometer that reads the
+      // context of whoever is sitting there.
+      sauna(x, y, q) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const wood = pal.deskTop, lt = this.shade(wood, 14);
+        this.box(x, y, 0, 2.3, 0.12, 1.8, lt, wood, pal.deskL);
+        this.box(x, y + 0.12, 0, 0.12, 1.5, 1.8, lt, wood, pal.deskL);
+        for (let u = 0.3; u < 2.2; u += 0.3) this.seg(P(x + u, y + 0.12, 0), P(x + u, y + 0.12, 1.8), this.tint(wood, -22));
+        this.box(x + 0.2, y + 0.2, 0, 1.4, 0.5, 0.34, lt, wood, pal.deskL);
+        const p = this.userOf(q);
+        const pct = p ? ctxPct(p.s) : 0.12;
+        const col = !p ? '#9b9a94' : pct >= 0.85 ? '#de4b40' : pct >= 0.6 ? '#e09412' : '#5f9a4c';
+        this.art(P(x + 1.25, y + 0.12, 1.55), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-2, -1, 5, 16);
+          c.fillStyle = '#fbf8ee'; c.fillRect(-1, 0, 3, 14);
+          const h = Math.max(2, Math.round(pct * 13));
+          c.fillStyle = col; c.fillRect(0, 14 - h, 1, h); c.fillRect(-1, 12, 3, 2);
+          c.fillStyle = INK_HEX; for (let k = 2; k < 12; k += 3) c.fillRect(1, k, 1, 1);
+        });
+      },
+      saunaStove(x, y, q) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        const p = this.userOf(q);
+        const pct = p ? ctxPct(p.s) : 0;
+        this.box(x, y, 0, 0.5, 0.5, 0.45, '#4a4e55', '#34373c', '#26282c');
+        const t = this.t / 1000;
+        this.art(P(x + 0.25, y + 0.25, 0.45), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-5, -4, 10, 5);
+          c.fillStyle = '#8c8c84'; c.fillRect(-4, -3, 3, 3); c.fillRect(1, -3, 3, 3);
+          c.fillStyle = pct >= 0.6 ? '#de4b40' : '#e8743a'; c.fillRect(-1, -2, 2, 2);
+          c.fillStyle = '#ffffff';
+          const n = 2 + Math.round(pct * 5);
+          for (let i = 0; i < n; i++) {
+            const a = ((t * (0.5 + pct) + i / n) % 1);
+            c.globalAlpha = (1 - a) * 0.7;
+            c.fillRect(Math.round(-4 + (i * 3) % 9 + Math.sin(a * 5 + i) * 2), Math.round(-6 - a * 16), 2, 1);
+          }
+          c.globalAlpha = 1;
+        });
+      },
+      // the way through: two posts, a beam, a curtain with the mark of a hot spring
+      norenGate(x, y0, y1) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const post = pal.trim, lt = this.tint(post, 16), dk = this.tint(post, -16);
+        for (const y of [y0, y1 - 0.12]) this.box(x - 0.06, y, 0, 0.12, 0.12, 2.0, lt, post, dk);
+        this.box(x - 0.06, y0, 1.9, 0.12, y1 - y0, 0.12, lt, post, dk);
+        const cloth = pal.dark ? '#8a262c' : '#b8323a';
+        const w = (y1 - y0 - 0.24) / 3;
+        for (let k = 0; k < 3; k++) {
+          const a = y0 + 0.12 + k * w;
+          this.poly([P(x, a + 0.02, 1.25), P(x, a + w - 0.02, 1.25), P(x, a + w - 0.02, 1.9), P(x, a + 0.02, 1.9)], cloth, this.tint(cloth, -30));
+        }
+        this.art(P(x, (y0 + y1) / 2, 1.62), (c) => {
+          c.fillStyle = '#ffffff';
+          c.fillRect(-4, 2, 9, 1); c.fillRect(-3, 3, 7, 1);
+          for (const sx of [-3, 0, 3]) { c.fillRect(sx, -1, 1, 2); c.fillRect(sx + 1, -3, 1, 2); c.fillRect(sx, -5, 1, 2); }
+        });
+      },
+
+      // ---- the inn
+      milkCrate(x, y) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        this.box(x, y, 0, 0.6, 0.45, 0.28, '#e8c84a', '#d9b23a', '#b8922a');
+        for (let k = 0; k < 6; k++) {
+          this.art(P(x + 0.1 + (k % 3) * 0.2, y + 0.12 + Math.floor(k / 3) * 0.2, 0.28), (c) => {
+            c.fillStyle = INK_HEX; c.fillRect(-1, -6, 4, 6);
+            c.fillStyle = '#fbfbf5'; c.fillRect(0, -4, 2, 4);
+            c.fillStyle = k % 2 ? '#3b8ee0' : '#de4b40'; c.fillRect(0, -5, 2, 1);
+          });
+        }
+      },
+      massageChair(x, y) {
+        const dark = this.pal.dark;
+        const lea = dark ? '#3a2a22' : '#5a3d2e', lt = this.tint(lea, 16), dk = this.tint(lea, -16);
+        this.box(x, y, 0, 0.8, 0.2, 1.25, lt, lea, dk);
+        this.box(x, y + 0.2, 0, 0.8, 0.6, 0.3, lt, lea, dk);
+        this.box(x, y + 0.2, 0.3, 0.12, 0.55, 0.22, lt, lea, dk);
+        this.box(x + 0.68, y + 0.2, 0.3, 0.12, 0.55, 0.22, lt, lea, dk);
+        this.art(this.iso(x + 0.4, y + 0.2, 1.05), (c) => { c.fillStyle = '#c9a24c'; c.fillRect(-3, 0, 6, 1); c.fillRect(-2, 3, 4, 1); });
+      },
+      // supper on a low table
+      supper(x, y) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        for (const lx of [x + 0.08, x + 1.22]) this.box(lx, y + 0.1, 0, 0.1, 0.6, 0.26, pal.deskL, pal.deskL, pal.deskR);
+        this.box(x, y, 0.26, 1.4, 0.8, 0.06, this.shade(pal.deskTop, -8), pal.deskL, pal.deskR);
+        for (const [u, v] of [[0.3, 0.25], [1.05, 0.25], [0.35, 0.6], [1.1, 0.6]]) {
+          this.art(P(x + u, y + v, 0.32), (c) => {
+            c.fillStyle = INK_HEX; c.fillRect(-3, -3, 7, 4);
+            c.fillStyle = '#b8323a'; c.fillRect(-2, -2, 5, 2);
+            c.fillStyle = '#ffffff'; c.fillRect(-2, -2, 2, 1); c.fillStyle = '#f2c230'; c.fillRect(1, -2, 1, 1); c.fillStyle = '#5f9a4c'; c.fillRect(2, -1, 1, 1);
+          });
+        }
+        this.art(P(x + 0.7, y + 0.42, 0.32), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-3, -6, 7, 6); c.fillRect(4, -5, 2, 1);
+          c.fillStyle = '#34373c'; c.fillRect(-2, -5, 5, 4);
+        });
+      },
+      futon(x, y, k) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        const col = ['#3f4f7a', '#b8323a', '#2f8a6a'][k % 3];
+        this.box(x, y, 0, 0.75, 1.5, 0.08, '#fbf8ee', '#e6e0cc', '#d6cfb8');
+        this.box(x, y + 0.45, 0.08, 0.75, 1.05, 0.06, this.shade(col, 14), col, this.shade(col, -16));
+        this.box(x + 0.14, y + 0.08, 0.08, 0.47, 0.26, 0.07, '#ffffff', '#ece6d4', '#dcd5c0');
+        for (const [u, v] of [[0.2, 0.75], [0.5, 1.0], [0.25, 1.25]]) this.art(P(x + u, y + v, 0.14), (c) => { c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(0, 0, 2, 1); c.fillRect(1, 1, 1, 1); });
       },
     },
   };
