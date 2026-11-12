@@ -359,14 +359,22 @@
   const turnTier = (s) => { const n = (s && s.today && s.today.turns) || 0; return n >= 60 ? 5 : n >= 30 ? 4 : n >= 15 ? 3 : n >= 6 ? 2 : n > 0 ? 1 : 0; };
   const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n));
   // The number a cat on a machine is showing, for the tag over its head.
+  // Three things are worth seeing about a cat that is off duty: how full its
+  // context is, how many tokens it has used today, how many turns it has
+  // taken. Every scene has a place for each. The office lifts, runs and
+  // spins; a scene says the same three things in its own way.
+  const STAT_OF = { lift: 'ctx', treadmill: 'tok', wheel: 'turns', fall: 'ctx', dummy: 'tok', cut: 'turns' };
+  const TURN_ICON = { cut: '🎋 ' };
+  const cutRate = (s) => 0.34 + turnTier(s) * 0.07;   // strokes a second at the bamboo
+
   function gymStat(act, s) {
-    if (act === 'lift' && s.context && s.context.used) {
+    const kind = STAT_OF[act];
+    if (kind === 'ctx' && s.context && s.context.used) {
       const pct = ctxPct(s);
       return { text: '🧠 ' + Math.round(pct * 100) + '%', color: pct >= 0.85 ? '#de4b40' : pct >= 0.6 ? '#e09412' : '#5f9a4c' };
     }
-    if (act === 'treadmill' && s.today && s.today.tokens) return { text: '🔥 ' + fmtTok(s.today.tokens), color: '#3b8ee0' };
-    if (act === 'wheel' && s.today && s.today.turns) return { text: '↻ ' + s.today.turns, color: '#8b6be6' };
-    if (act === 'cut' && s.today && s.today.turns) return { text: '🎋 ' + s.today.turns, color: '#5f9a4c' };
+    if (kind === 'tok' && s.today && s.today.tokens) return { text: '🔥 ' + fmtTok(s.today.tokens), color: '#3b8ee0' };
+    if (kind === 'turns' && s.today && s.today.turns) return { text: (TURN_ICON[act] || '↻ ') + s.today.turns, color: '#8b6be6' };
     return null;
   }
 
@@ -1078,9 +1086,10 @@
         if (q.pair) w = plan.pois.some((o) => o.pair === q.pair && o !== q && o.taken) ? 7 : 1.2;
         if (q.act === 'couch' || q.act === 'beanbag' || q.sleepy) w = sleepy ? 3 : 1.4;
         // The gym is a gauge, so the cats with most to show get it first.
-        if (q.act === 'lift') w = 0.8 + 4 * ctxPct(p.s);
-        if (q.act === 'treadmill') w = 0.8 + 0.4 * tokTier(p.s);
-        if (q.act === 'wheel') w = 0.8 + 0.4 * turnTier(p.s);
+        const kind = STAT_OF[q.act];
+        if (kind === 'ctx') w = 0.8 + 4 * ctxPct(p.s);
+        if (kind === 'tok') w = 0.8 + 0.4 * tokTier(p.s);
+        if (kind === 'turns') w = 0.8 + 0.4 * turnTier(p.s);
         if (q.act === 'yoga') w = sleepy ? 2.5 : 1.2;
         // A cat that has just finished goes and lies in the sun.
         if (q.act === 'sun') w = p.s.status === 'done' ? 4 : sleepy ? 2 : 1;
@@ -1100,7 +1109,7 @@
       p.poi = choice;
       p.until = Infinity; // set on arrival
       const long = choice.act === 'nap' || choice.act === 'sun' || choice.act === 'box';
-      const mid = ['pingpong', 'lift', 'treadmill', 'wheel', 'yoga'].includes(choice.act);
+      const mid = choice.act === 'pingpong' || choice.act === 'yoga' || !!STAT_OF[choice.act];
       p.stay = (lunch ? rand(240, 540) : long ? rand(25, 60) : mid ? rand(15, 30) : rand(8, 20)) * 1000;
       this.goTo(p, choice);
     }
@@ -2690,6 +2699,8 @@
       const y = b.y - bob;
       if (st.act === 'pingpong') x += Math.sin(t * 7 + p.phase) * 4;
       if (st.act === 'foosball') x += Math.sin(t * 5 + p.phase) * 1.5;
+      // under the fall with a context nearly full, it shivers
+      if (st.act === 'fall' && ctxPct(s) >= 0.85 && Math.sin(t * 40) > 0) x += ART;
       const sc = 1;
       c.save();
       c.translate(x, y);
@@ -2725,7 +2736,7 @@
       const napping = st.act === 'nap';
       const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
       // Basking shuts the eyes, and so does a bar that is nearly too heavy.
-      const strain = st.act === 'lift' && ctxPct(s) >= 0.85;
+      const strain = STAT_OF[st.act] === 'ctx' && ctxPct(s) >= 0.85;
       const eyes = (blink || sleepy || napping || strain || SHUT_ACTS.has(st.act)) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
       const sprite = catSprite(br, seated, front, eyes, kit);
       c.imageSmoothingEnabled = false;
@@ -2888,7 +2899,7 @@
         case 'cut': {
           // The sword goes up, waits, and comes down through the bamboo
           // beside it. bambooTarget() keeps the same time.
-          const k = (((t * 0.5 + p.phase) % 1) + 1) % 1;
+          const k = (((t * cutRate(s) + p.phase) % 1) + 1) % 1;
           const steel = '#dfe6ee', hilt = '#3a2a1e';
           if (k < 0.5) {
             // raised: both paws at the hilt, the blade straight up
@@ -2911,7 +2922,16 @@
           break;
         }
         case 'fall': {
+          // Standing in the water, paws together. The water is its context
+          // (see the scene's fallWater); near the limit it is hard to bear.
           paw(-1, top + 3);
+          if (ctxPct(s) >= 0.85 && Math.sin(t * 6) > 0) { c.fillStyle = '#7fc4ff'; c.fillRect(8, -PXH + 3, 1, 2); c.fillRect(-9, -PXH + 5, 1, 2); }
+          break;
+        }
+        case 'dummy': {
+          // Left, right, left: faster the more tokens it has been through today.
+          const k = Math.sin(t * (4 + tokTier(s) * 2.4) + p.phase) > 0;
+          if (k) { paw(-9, top - 2); paw(5, top + 3); } else { paw(-7, top + 3); paw(7, top - 2); }
           break;
         }
         case 'kit:yarn': {
@@ -3447,7 +3467,7 @@
           pot: '#2b3f52',
         },
       },
-      emoji: { cut: '⚔️', arcade: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
+      emoji: { cut: '⚔️', dummy: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
 
       buildPlan(nWorking) {
         const COLS = 4;
@@ -3491,8 +3511,8 @@
         const pond = { x0: HW + 2.3, x1: W - 0.5, y0: 2.45, y1: GD - 1.5 };
         add(fx + 0.1 + 0.75, () => this.fallRock(fx - 0.7, 0.1));
         solid(fx - 0.7, 0.1, 1.6, 1.3, 0.03);
-        poi(fx, 1.62, 'fall', 'front', { emoji: '💧' });
-        add(fx + 1.62 + 0.06, () => this.fallWater(fx, 1.62), true);
+        const fq = poi(fx, 1.62, 'fall', 'front', { emoji: '💧' });
+        add(fx + 1.62 + 0.06, () => this.fallWater(fx, 1.62, fq), true);
         solid(pond.x0, pond.y0, pond.x1 - pond.x0, pond.y1 - pond.y0, 0.05);
         for (const sy of [1.5, 3.3]) {
           const sx = HW + 0.45;
@@ -3548,7 +3568,7 @@
           const ax = GX + 0.5, ay = HD + 0.4;
           add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
           solid(ax + 0.1, ay + 0.1, 0.5, 0.5, 0.02);
-          poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
+          poi(ax + 0.35, ay + 1.15, 'dummy', 'back');
         }
         for (let k = 0; k < 3; k++) {
           const [bx, by] = [[GX + 2.3, HD + 0.8], [GX + 4.3, HD + 1.2], [GX + 3.0, HD + 2.5]][k];
@@ -3867,15 +3887,21 @@
           this.art(this.iso(x + u, y + v, 0.9), (c) => { c.fillStyle = moss; c.fillRect(-2, -1, 4, 2); c.fillRect(-1, -2, 2, 1); });
         }
       },
-      fallWater(cx, fy) {
+      // The water is the context of whoever stands in it: the fuller the
+      // context, the wider and harder it comes down.
+      fallWater(cx, fy, q) {
         const t = this.t / 1000;
+        const p = this.userOf(q);
+        const pct = p ? ctxPct(p.s) : 0;
+        const w = 4 + Math.round(pct * 4);
         this.art(this.iso(cx, fy, 0), (c) => {
           const H = 28;
-          c.globalAlpha = 0.5; c.fillStyle = '#bfe6f5'; c.fillRect(-4, -H, 8, H);
+          c.globalAlpha = 0.45 + pct * 0.3; c.fillStyle = '#bfe6f5'; c.fillRect(-w, -H, w * 2, H);
           c.globalAlpha = 0.9; c.fillStyle = '#ffffff';
-          for (let i = 0; i < 4; i++) {
-            const k = (t * 1.6 + i * 0.27) % 1;
-            c.fillRect(-3 + i * 2, Math.round(-H + k * (H - 4)), 1, 4);
+          const n = 4 + Math.round(pct * 5);
+          for (let i = 0; i < n; i++) {
+            const k = (t * (1.6 + pct * 1.4) + i * 0.27) % 1;
+            c.fillRect(-w + 1 + ((i * 3) % (w * 2 - 1)), Math.round(-H + k * (H - 4)), 1, 4);
           }
           const s = Math.sin(t * 9) > 0 ? 1 : 0;
           c.globalAlpha = 0.85;
@@ -3986,7 +4012,7 @@
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
         const g = pal.dark ? ['#3f6a3a', '#56864a'] : ['#5f9a4c', '#86bd62'];
         const p = this.userOf(q);
-        const k = p ? (((this.t / 1000) * 0.5 + p.phase) % 1 + 1) % 1 : 0;
+        const k = p ? (((this.t / 1000) * cutRate(p.s) + p.phase) % 1 + 1) % 1 : 0;
         this.box(x - 0.16, y - 0.16, 0, 0.32, 0.32, 0.1, pal.deskTop, pal.deskL, pal.deskR);
         this.art(P(x, y, 0.1), (c) => {
           const H = 27, CUT = 13;                 // whole height, and where the blade goes through
