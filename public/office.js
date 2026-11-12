@@ -1590,7 +1590,7 @@
             if (xb - xa > 0.05) {
               this.poly([P(xa, y), P(xb, y), P(xb, yb), P(xa, yb)], base);
               this.seg(P(xa, y), P(xb, y), lt, 0, 1);
-              for (let k = 0; k < 2; k++) {
+              for (let k = 0; k < 2 && yb - y > 0.3; k++) {
                 let gy = y + 0.14 + picks[k] * 0.24;
                 const g0 = xa + 0.1 + picks[k + 2] * 0.3, g1 = Math.min(xb - 0.1, g0 + 0.4 + picks[k + 4] * (len - 0.7));
                 for (let gx = g0; gx < g1; gx += STEP) {
@@ -1600,7 +1600,8 @@
                   if (w < 0.86) dot(P(gx, gy), dk);
                 }
               }
-              if (picks[6] < 0.28 && xb - xa > 0.8) {
+              // (a knot sits mid-board, so a last row cut short by the wall gets none)
+              if (picks[6] < 0.28 && xb - xa > 0.8 && yb - y > 0.4) {
                 const k = P(xa + 0.3 + picks[0] * (xb - xa - 0.6), y + 0.25);
                 dot(k, seam); dot(k, seam, 1, 0); dot(k, dk, -1, 0); dot(k, dk, 2, 0); dot(k, dk, 0, -1); dot(k, dk, 1, 1);
               }
@@ -2696,7 +2697,9 @@
       });
 
       let x = b.x;
-      const y = b.y - bob;
+      // In a pool it stands lower, and the water closes round its middle.
+      const wet = this.wading(p);
+      const y = b.y - bob + (wet ? 4 * ART : 0);
       if (st.act === 'pingpong') x += Math.sin(t * 7 + p.phase) * 4;
       if (st.act === 'foosball') x += Math.sin(t * 5 + p.phase) * 1.5;
       // under the fall with a context nearly full, it shivers
@@ -3018,6 +3021,12 @@
         }
         default: break;
       }
+      if (wet) {
+        pxDisc(c, 0, -4, kit ? 7 : 10, 5, wet);
+        c.fillStyle = this.tint(wet, 30);
+        const k = Math.sin(t * 2.2 + p.phase) > 0 ? 1 : 0;
+        c.fillRect(-9 - k, -5, 4, 1); c.fillRect(6 + k, -4, 4, 1); c.fillRect(-3, 0, 6, 1);
+      }
       c.restore();
 
       // Back in world units for the name tag and the click target.
@@ -3025,6 +3034,15 @@
       const half = (kit ? 7 : PXC + 1) * ART;
       this.hit.push({ key: p.key, x0: x - half, x1: x + half, y0: headTop - 4, y1: fb.y + 4 });
       return { x, y: headTop + 6, act: st.act };
+    }
+
+    // The colour of the water a cat is standing in, if it is standing in any.
+    wading(p) {
+      const pool = this.plan.pool;
+      if (!pool || !pool.water) return null;
+      const m = 0.25;
+      if (p.x < pool.x0 + m || p.x > pool.x1 - m || p.y < pool.y0 + m || p.y > pool.y1 - m) return null;
+      return this.tint(pool.water[this.pal.dark ? 1 : 0], 12);   // the paler middle of the pool
     }
 
     emojiOf(act) {
@@ -3343,10 +3361,12 @@
         if (p.mode !== 'work' || p.path.length) continue;
         // between the screen and the face it lights
         this.art(P((dk.x + 0.7 + dk.seat.x) / 2, (dk.y + 0.4 + dk.seat.y) / 2, 0.75), (g) => {
-          pxDisc(g, 0, 0, 24, 13, 'rgba(110,150,255,.08)');
-          pxDisc(g, 0, 0, 17, 9, 'rgba(130,170,255,.09)');
-          pxDisc(g, 0, 0, 10, 6, 'rgba(170,205,255,.10)');
-          pxDisc(g, 0, 0, 5, 3, 'rgba(220,235,255,.08)');
+          // a screen is blue; a lamp, a lantern or a marquee is whatever the scene says
+          const [a, b2, c2, d2] = this.sceneArt.glow || ['110,150,255', '130,170,255', '170,205,255', '220,235,255'];
+          pxDisc(g, 0, 0, 24, 13, `rgba(${a},.08)`);
+          pxDisc(g, 0, 0, 17, 9, `rgba(${b2},.09)`);
+          pxDisc(g, 0, 0, 10, 6, `rgba(${c2},.10)`);
+          pxDisc(g, 0, 0, 5, 3, `rgba(${d2},.08)`);
         });
       }
       c.restore();
@@ -3571,6 +3591,7 @@
           pot: '#2b3f52',
         },
       },
+      glow: ['255,170,90', '255,190,110', '255,210,140', '255,235,190'],
       emoji: { cut: '⚔️', dummy: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
 
       buildPlan(nWorking) {
@@ -4216,6 +4237,7 @@
           glass: 'rgba(160,190,230,.14)', glassEdge: '#8a6f33', mat: '#232c4a', pot: '#8a6f33',
         },
       },
+      glow: ['255,120,200', '255,150,210', '255,190,225', '255,230,240'],
       emoji: { dummy: '🪙', spin: '🎡', chips: '💰', stool: '🍹', coffee: '🍸', couch: '💬', beanbag: '💤', vending: '🥤', arcade: '🎮' },
 
       buildPlan(nWorking) {
@@ -4249,6 +4271,11 @@
         add(0.9 + 1.1 + 0.3 + 0.35, () => this.cashier(0.9, 0.3));
         solid(0.9, 0.3, 2.2, 0.7, 0.03);
         poi(2.0, 1.75, 'chips', 'front');
+        for (const [cx, cy, hue] of [[1.0, 2.7, '#e0679a'], [1.0, 4.2, '#3fa7a0']]) {
+          const q = poi(cx + 0.4, cy + 1.2, 'arcade', 'back', { emoji: '🧸' });
+          add(cx + 0.4 + cy + 0.35, () => this.clawMachine(cx, cy, hue, q), () => !!this.userOf(q));
+          solid(cx, cy, 0.8, 0.7, 0.03);
+        }
         const vy = FY + 0.1;
         add(0.5 + vy + 0.4, () => this.vending(0.12, vy, '#2f6fb0'));
         add(0.5 + vy + 0.41, () => this.vendingLight(0.12, vy), true);
@@ -4594,6 +4621,36 @@
           c.fillStyle = '#f2c230'; c.fillRect(-1, -R - 3, 3, 2); c.fillRect(0, -R - 1, 1, 2);
         });
       },
+      // A claw machine: prizes under glass, and a claw that goes looking
+      // for one while somebody is at the stick.
+      clawMachine(x, y, hue, q) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        const w = 0.8, d = 0.7;
+        this.box(x, y, 0, w, d, 0.75, this.shade(hue, 18), hue, this.shade(hue, -20));
+        const TOY = ['#f29aa8', '#f2c230', '#7fd0d6', '#b98ae6', '#8fd28f'];
+        for (let k = 0; k < 7; k++) {
+          this.art(P(x + 0.12 + ((k * 31) % 58) / 100, y + 0.14 + ((k * 47) % 46) / 100, 0.75), (c) => {
+            c.fillStyle = INK_HEX; c.fillRect(-2, -4, 5, 5);
+            c.fillStyle = TOY[k % 5]; c.fillRect(-1, -3, 3, 3);
+            c.fillStyle = '#ffffff'; c.fillRect(-1, -3, 1, 1);
+          });
+        }
+        const on = this.userOf(q), t = this.t / 1000;
+        const cu = on ? 0.4 + Math.sin(t * 1.3) * 0.22 : 0.4;
+        const drop = on ? Math.round(Math.max(0, Math.sin(t * 0.9)) * 8) : 0;
+        this.art(P(x + cu, y + 0.4, 1.55), (c) => {
+          c.fillStyle = '#c9ced6'; c.fillRect(0, 0, 1, 3 + drop);
+          c.fillStyle = INK_HEX; c.fillRect(-2, 3 + drop, 5, 1); c.fillRect(-2, 4 + drop, 1, 2); c.fillRect(2, 4 + drop, 1, 2);
+        });
+        this.box(x, y, 0.75, w, d, 0.85, 'rgba(190,220,255,.14)', 'rgba(190,220,255,.16)', 'rgba(190,220,255,.1)');
+        this.box(x, y, 1.6, w, d, 0.12, this.shade(hue, 26), hue, this.shade(hue, -20));
+        for (const [u, v] of [[0, d], [w, d], [w, 0]]) this.seg(P(x + u, y + v, 0.75), P(x + u, y + v, 1.6), this.shade(hue, -30));
+        this.art(P(x + 0.3, y + d, 0.6), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(0, -3, 1, 3);
+          c.fillStyle = '#de4b40'; c.fillRect(-1, -4, 3, 2);
+          c.fillStyle = '#f2c230'; c.fillRect(5, -1, 2, 1);
+        });
+      },
       // What stands on the bar: glasses, a shaker, a bowl.
       barTop(x, y, w) {
         const P = (a, b, c) => this.iso(a, b, c);
@@ -4641,6 +4698,7 @@
           glass: 'rgba(200,190,165,.22)', glassEdge: '#33261b', mat: '#4a5236', pot: '#2b3f52',
         },
       },
+      glow: ['255,170,90', '255,190,110', '255,210,140', '255,235,190'],
       emoji: { milk: '🥛', massage: '💆', sauna: '♨️', dip: '♨️', meeting: '🍵', beanbag: '💤', sink: '🫧', vending: '🥤' },
 
       buildPlan(nWorking) {
@@ -4677,11 +4735,10 @@
         const mural = { x0: LX + 0.5, x1: LX + 4.6 };
 
         // ---- the open air: the big pool, the sauna, a lantern, bamboo
-        const pool = { x0: LX + 1.3, x1: W - 3.4, y0: BH + 1.0, y1: D - 0.9 };
+        const pool = { x0: LX + 1.3, x1: W - 3.4, y0: BH + 1.0, y1: D - 0.9, water: ['#7fd0d6', '#2a5a66'] };
         solid(pool.x0, pool.y0, pool.x1 - pool.x0, pool.y1 - pool.y0, 0.02);
         for (const [u, v] of [[1.3, 1.0], [3.3, 2.0], [5.2, 1.1]]) {
-          const q = poi(pool.x0 + u, pool.y0 + v, 'dip', 'front', { sit: 0.01 });
-          add(q.x + q.y + 0.05, () => this.poolLip(q), true);
+          poi(pool.x0 + u, pool.y0 + v, 'dip', 'front', { sit: 0.01 });
         }
         add((pool.x0 + pool.x1) / 2 + pool.y1 + 0.3, () => this.poolSteam(pool), true);
         const sa = { x: W - 2.7, y: BH + 1.0 };
@@ -4701,7 +4758,7 @@
         }
         add(W - 0.8 + D - 0.8, () => this.lantern(W - 0.8, D - 0.8));
         solid(W - 1.05, D - 1.05, 0.5, 0.5, 0.02);
-        for (const [bx, by] of [[W - 0.6, BH + 0.45], [W - 3.0, D - 0.45]]) {
+        for (const [bx, by] of [[W - 0.6, BH + 0.45], [W - 1.9, D - 0.45]]) {
           add(bx + by, () => this.bamboo(bx, by));
           solid(bx - 0.3, by - 0.25, 0.6, 0.5, 0.02);
         }
@@ -4965,19 +5022,6 @@
           c.fillStyle = '#7fd0d6'; c.fillRect(-2, -4, 4, 1);
         });
         this.art(P(x + 0.25, 0, 0.7), (c) => { c.fillStyle = '#c9ced6'; c.fillRect(0, 0, 1, 3); c.fillRect(0, 3, 3, 1); c.fillStyle = '#de4b40'; c.fillRect(-1, -1, 1, 1); c.fillStyle = '#3b8ee0'; c.fillRect(1, -1, 1, 1); });
-      },
-      // water round the middle of whoever is in the big pool
-      poolLip(q) {
-        const p = this.userOf(q);
-        if (!p) return;
-        const water = this.pal.dark ? '#2a5a66' : '#7fd0d6';
-        const t = this.t / 1000;
-        this.art(this.iso(q.x, q.y, 0), (c) => {
-          pxDisc(c, 0, -2, 10, 4, water);
-          c.fillStyle = this.tint(water, 34);
-          const k = Math.sin(t * 2.2 + q.x) > 0 ? 1 : 0;
-          c.fillRect(-9 - k, -3, 4, 1); c.fillRect(6 + k, -2, 4, 1); c.fillRect(-3, 1, 6, 1);
-        });
       },
       poolSteam(pool) {
         const t = this.t / 1000;
