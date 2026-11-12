@@ -16,6 +16,12 @@
   const LUNCH_FROM = 12 * 60 + 30, LUNCH_TO = 13 * 60 + 30;
   const LUNCH_EAT = new Set(['stool', 'meeting']);                 // places with a table
   const LUNCH_NAP = new Set(['couch', 'beanbag', 'box', 'sun']);   // places to lie down
+  // Petting the office cat. A stroke is a click, or PET_RUB screen pixels of
+  // the mouse moving over it. It purrs for PET_GLOW after the last stroke,
+  // stays put for PET_STAY, and rolls over after PET_BELLY strokes.
+  const PET_KEY = 'pet:cat';
+  const PET_RUB = 26, PET_GLOW = 2600, PET_STAY = 7000, PET_BELLY = 10;
+  const PET_HEART = [[1, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [2, 3]];
   const SPEED = 2.1; // tiles / second
 
   // The office is staffed by cats. One breed per session, picked from its key,
@@ -528,7 +534,7 @@
       this.t = performance.now();
       this.pal = palette();
       this.plan = this.buildPlan(0);
-      this.cat = { x: this.plan.W - 3, y: this.plan.D - 2, path: [], until: 0, face: 1 };
+      this.cat = { x: this.plan.W - 3, y: this.plan.D - 2, path: [], until: 0, face: 1, petAt: 0, strokes: 0, hearts: [] };
       this.theme = matchMedia('(prefers-color-scheme: dark)');
       this.onTheme = () => (this.pal = palette());
       this.theme.addEventListener('change', this.onTheme);
@@ -537,7 +543,7 @@
       this.ro.observe(root);
       this.canvas.addEventListener('mousemove', (e) => this.pointer(e));
       this.canvas.addEventListener('click', (e) => this.pointer(e, true));
-      this.canvas.addEventListener('mouseleave', () => { this.hoverKey = null; this.onHover(null); });
+      this.canvas.addEventListener('mouseleave', () => { this.hoverKey = null; this.rubAt = null; this.onHover(null); });
       this.resize();
       this.last = performance.now();
       // Resolves true once a few frames have been drawn with data in place,
@@ -1167,12 +1173,36 @@
         if (mx >= h.x0 && mx <= h.x1 && my >= h.y0 && my <= h.y1) { found = h; break; }
       }
       const key = found ? found.key : null;
-      this.canvas.style.cursor = key ? 'pointer' : 'default';
-      if (key !== this.hoverKey || click) {
+      const pet = key === PET_KEY;
+      this.canvas.style.cursor = pet ? 'grab' : key ? 'pointer' : 'default';
+      if (pet) this.rubCat(mx, my, click); else this.rubAt = null;
+      // A click on the cat is for the cat: it does not close a pinned card.
+      if (key !== this.hoverKey || (click && !pet)) {
         this.hoverKey = key;
         const p = key && this.people.get(key);
         this.onHover(p ? p.s : null, { x: e.clientX, y: e.clientY }, !!click);
       }
+    }
+
+    // The mouse is on the cat. It stops for a hand held out to it; a click
+    // is one stroke, and so is every PET_RUB pixels of rubbing.
+    rubCat(mx, my, click) {
+      const k = this.cat, now = Date.now();
+      const wait = k.path.length || k.until === Infinity ? 0 : k.until;
+      k.path = [];
+      k.until = Math.max(wait, now + 2500);
+      let strokes = click ? 1 : 0;
+      if (this.rubAt) {
+        this.rub = (this.rub || 0) + Math.hypot(mx - this.rubAt.x, my - this.rubAt.y);
+        while (this.rub >= PET_RUB) { this.rub -= PET_RUB; strokes++; }
+      }
+      this.rubAt = { x: mx, y: my };
+      if (!strokes) return;
+      if (now - k.petAt > PET_STAY) k.strokes = 0;
+      k.strokes += strokes;
+      k.petAt = now;
+      k.until = now + PET_STAY;
+      if (k.hearts.length < 14) k.hearts.push({ at: this.t, dx: rand(-5, 5) });
     }
 
     iso(x, y, z = 0) {
@@ -2963,15 +2993,31 @@
     drawCat() {
       const k = this.cat;
       const t = this.t / 1000;
+      const now = Date.now();
       const walking = k.path.length > 0;
+      const petted = now - k.petAt < PET_GLOW;
+      const belly = petted && k.strokes >= PET_BELLY;
       const fur = '#e8913f', stripe = '#c9702a', pale = '#fbe6c8', pink = '#f29aa8';
-      this.art(this.iso(k.x, k.y, 0), (c) => {
-        pxDisc(c, 0, 0, 5, 1, this.pal.shadow);
+      const at = this.iso(k.x, k.y, 0);
+      // Where to pet it, and what it has to say about that.
+      this.hit.push({ key: PET_KEY, x0: at.x - 10 * ART, x1: at.x + 10 * ART, y0: at.y - 15 * ART, y1: at.y + 2 * ART });
+      this.catSay = petted ? { at, purr: true, n: k.strokes }
+        : this.hoverKey === PET_KEY && !walking ? { at, purr: false } : null;
+      this.art(at, (c) => {
+        pxDisc(c, 0, 0, belly ? 7 : 5, 1, this.pal.shadow);
+        c.save();
         c.scale(k.face, 1);
-        const sway = Math.sin(t * 3) > 0 ? 0 : 1;
+        const sway = Math.sin(t * (petted ? 12 : 3)) > 0 ? 0 : 1;
         const s = walking && Math.sin(t * 14) > 0 ? 1 : 0;
+        const bob = petted && Math.sin(t * 9) > 0 ? 1 : 0;    // leaning into the hand
+        const kick = Math.sin(t * 10) > 0 ? 1 : 0;
         // each part is [x, y, w, h, colour]; the outline is every part grown by one
-        const parts = walking ? [
+        const parts = belly ? [
+          [-9, -2, 3, 1, fur], [-10, -3 - sway, 1, 1, fur],           // tail
+          [-6, -6, 10, 5, fur],                                        // body, on its back
+          [-5, -9 - kick, 2, 3, fur], [0, -10 + kick, 2, 4, fur],     // paws in the air, kicking in turn
+          [3, -8, 5, 6, fur], [3, -9, 1, 1, fur], [7, -9, 1, 1, fur],  // head, ears
+        ] : walking ? [
           [-6, -9, 1, 3, fur], [-6 - sway, -10, 1, 1, fur],          // tail up
           [-5, -7, 9, 4, fur],                                        // body
           [-4 - s, -3, 2, 3, fur], [2 + s, -3, 2, 3, fur],            // legs
@@ -2979,22 +3025,63 @@
         ] : [
           [-6, -1, 3, 1, fur], [-7, -2 - sway, 1, 1, fur],           // tail round the feet
           [-3, -7, 6, 7, fur],                                        // body, sitting
-          [1, -12, 5, 5, fur], [1, -13, 1, 1, fur], [5, -13, 1, 1, fur],
+          [1, -12 + bob, 5, 5, fur], [1, -13 + bob, 1, 1, fur], [5, -13 + bob, 1, 1, fur],
         ];
         c.fillStyle = INK_HEX;
         for (const [x, y, w, h] of parts) c.fillRect(x - 1, y - 1, w + 2, h + 2);
         for (const [x, y, w, h, col] of parts) { c.fillStyle = col; c.fillRect(x, y, w, h); }
         const dot = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
-        if (walking) {
+        if (belly) {
+          dot(-5, -6, 8, 3, pale);                                    // the belly
+          dot(-5, -9 - kick, 2, 1, pink); dot(0, -10 + kick, 2, 1, pink); // pads
+          dot(-4, -3, 1, 2, stripe); dot(-1, -3, 1, 2, stripe); dot(2, -3, 1, 2, stripe);
+          dot(4, -6, 2, 1, INK_HEX);                                  // eye shut
+          dot(6, -4, 2, 1, pale); dot(7, -5, 1, 1, pink);
+        } else if (walking) {
           dot(-3, -7, 1, 2, stripe); dot(-1, -7, 1, 2, stripe); dot(1, -7, 1, 2, stripe);
           dot(-4, -4, 7, 1, pale); dot(6, -7, 2, 1, pale);
           dot(6, -9, 1, 1, INK_HEX); dot(7, -8, 1, 1, pink);
         } else {
           dot(-2, -7, 1, 2, stripe); dot(0, -7, 1, 1, stripe);
-          dot(0, -5, 3, 3, pale); dot(1, -1, 2, 1, pale); dot(4, -9, 2, 1, pale);
-          dot(4, -11, 1, 1, INK_HEX); dot(5, -10, 1, 1, pink);
+          dot(0, -5, 3, 3, pale); dot(1, -1, 2, 1, pale); dot(4, -9 + bob, 2, 1, pale);
+          if (petted) dot(3, -11 + bob, 2, 1, INK_HEX);               // eye shut
+          else dot(4, -11, 1, 1, INK_HEX);
+          dot(5, -10 + bob, 1, 1, pink);
         }
+        c.restore();
+        // One heart a stroke, drifting up and out.
+        for (const h of k.hearts) {
+          const a = (this.t - h.at) / 1200;
+          if (a < 0 || a >= 1) continue;
+          const hx = Math.round(h.dx + Math.sin(a * 7 + h.dx) * 2) - 2, hy = Math.round(-18 - a * 14);
+          c.globalAlpha = a < 0.6 ? 1 : (1 - a) / 0.4;
+          c.fillStyle = '#ff5c7a';
+          for (const [x, y] of PET_HEART) c.fillRect(hx + x, hy + y, 1, 1);
+          c.fillStyle = '#ffd0da';
+          c.fillRect(hx + 1, hy + 1, 1, 1);
+        }
+        c.globalAlpha = 1;
       });
+      k.hearts = k.hearts.filter((h) => this.t - h.at < 1200);
+    }
+
+    // What the cat says, under its feet so the hearts have the air above.
+    catBubble(at, say) {
+      const c = this.ctx, pal = this.pal;
+      const lab = this.petLabel || {};
+      const text = say.purr ? (lab.purr || 'purr purr') + ' ×' + say.n : lab.meow || 'Meow?';
+      c.save();
+      c.font = '600 10px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      const w = c.measureText(text).width + 12;
+      // purring makes the words tremble
+      const jig = say.purr ? Math.round(Math.sin(this.t / 45)) : 0;
+      const y = at.y + 14;
+      this.roundRect(at.x - w / 2 + jig, y - 8, w, 16, 8, say.purr ? '#ff6b8a' : pal.bubble);
+      c.fillStyle = say.purr ? '#ffffff' : pal.bubbleInk;
+      c.fillText(text, at.x + jig, y + 0.5);
+      c.restore();
     }
 
     pingPongBall() {
@@ -3182,6 +3269,7 @@
         ...at, x: at.x * this.cam.zoom + this.cam.ox, y: at.y * this.cam.zoom + this.cam.oy,
       });
       for (const [p, at] of heads) this.bubble(p, toScreen(at));
+      if (this.catSay) this.catBubble(toScreen(this.catSay.at), this.catSay);
       if (this.lunch) {
         v.font = '600 11px ui-sans-serif, system-ui, -apple-system, "PingFang TC", sans-serif';
         v.textAlign = 'left';

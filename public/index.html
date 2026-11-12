@@ -499,7 +499,7 @@ function applyLang(code) {
   if (typeof renderLangMenu === 'function') renderLangMenu();
   if (typeof office !== 'undefined' && office) {
     office.offDutyLabel = L.wentHome;
-    office.lunchLabel = L.lunch || I18N.en.lunch;
+    office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
   }
   if (typeof syncControls === 'function') syncControls();
   if (typeof renderVersion === 'function') renderVersion();
@@ -1035,7 +1035,7 @@ async function makeOffice() {
   const mine = new window.Office(officeEl, { ...officeOpts, showAgent: state.showAgent });
   office = mine;
   office.offDutyLabel = L.wentHome;
-  office.lunchLabel = L.lunch || I18N.en.lunch;
+  office.lunchLabel = L.lunch || I18N.en.lunch; office.petLabel = { purr: L.purr || I18N.en.purr, meow: L.meow || I18N.en.meow };
   if (LUNCH_PREVIEW != null) office.lunchOverride = LUNCH_PREVIEW;
   office.setInset(panelInset(), false);
   render();
