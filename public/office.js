@@ -19,6 +19,7 @@
   // Petting the office cat. A stroke is a click, or PET_RUB screen pixels of
   // the mouse moving over it. It purrs for PET_GLOW after the last stroke,
   // stays put for PET_STAY, and rolls over after PET_BELLY strokes.
+  const SHUT_ACTS = new Set(['sun', 'zen', 'fall']);   // things done with the eyes closed
   const PET_KEY = 'pet:cat';
   const PET_RUB = 26, PET_GLOW = 2600, PET_STAY = 7000, PET_BELLY = 10;
   const PET_HEART = [[1, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [2, 3]];
@@ -1087,7 +1088,7 @@
       }
       for (const d of plan.noNap ? [] : plan.desks) {
         if (workingDesks.has(d) || d.napper) continue;
-        weighted.push([{ x: d.seat.x, y: d.seat.y, act: 'nap', face: d.side === 'n' ? 'front' : 'back', sit: 0.34, desk: d }, lunch ? (eating ? 0.5 : 2) : sleepy ? 3 : 0.25]);
+        weighted.push([{ x: d.seat.x, y: d.seat.y, act: 'nap', face: d.side === 'n' ? 'front' : 'back', sit: plan.seatZ != null ? plan.seatZ : 0.34, desk: d }, lunch ? (eating ? 0.5 : 2) : sleepy ? 3 : 0.25]);
       }
       if (!weighted.length) return;
       let r = Math.random() * weighted.reduce((a, [, w]) => a + w, 0);
@@ -1467,66 +1468,10 @@
       c.restore();
     }
 
-    paintRoom() {
+    // The office floors, zone by zone. A scene with its own plan paints its own.
+    paintFloor({ P, dot, STEP, planks }) {
       const { W, D, OW, MR, PY, pp } = this.plan;
       const pal = this.pal;
-      const c = this.ctx;
-      const m = c.getTransform();
-      const P = (x, y, z) => this.iso(x, y, z);
-      const dot = (p, col, dx = 0, dy = 0) => {
-        c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
-        c.fillStyle = col;
-        c.fillRect(Math.round(p.x * m.a + m.e) + dx, Math.round(p.y * m.d + m.f) + dy, 1, 1);
-        c.restore();
-      };
-      const rng = (seed) => {
-        let v = seed % 2147483647; if (v <= 0) v += 2147483646;
-        return () => ((v = (v * 16807) % 2147483647) - 1) / 2147483646;
-      };
-      const STEP = ART / (TW / 2);     // one art pixel along a floor axis, in tiles
-
-      // Wood: boards of uneven length and tone, each with its own grain, laid
-      // in rows half a tile deep. The seed is the row, so the floor is the
-      // same floor every time it is repainted.
-      const planks = (x0, x1, y0, y1, salt) => {
-        const tones = [pal.wood1, pal.wood2, this.tint(pal.wood1, pal.dark ? 6 : -8)];
-        const seam = this.tint(pal.wood1, pal.dark ? -20 : -34);
-        let row = 0;
-        for (let y = y0; y < y1 - 1e-6; y += 0.5, row++) {
-          const r = rng(row * 131 + salt);
-          const yb = Math.min(y1, y + 0.5);
-          let x = x0 - r() * 1.5;
-          while (x < x1) {
-            const len = 1.2 + r() * 1.7;
-            const xa = Math.max(x0, x), xb = Math.min(x1, x + len);
-            const base = tones[Math.floor(r() * 3)];
-            const lt = this.tint(base, pal.dark ? 8 : 9), dk = this.tint(base, pal.dark ? -11 : -15);
-            const picks = [r(), r(), r(), r(), r(), r(), r()];
-            if (xb - xa > 0.05) {
-              this.poly([P(xa, y), P(xb, y), P(xb, yb), P(xa, yb)], base);
-              this.seg(P(xa, y), P(xb, y), lt, 0, 1);
-              for (let k = 0; k < 2; k++) {
-                let gy = y + 0.14 + picks[k] * 0.24;
-                const g0 = xa + 0.1 + picks[k + 2] * 0.3, g1 = Math.min(xb - 0.1, g0 + 0.4 + picks[k + 4] * (len - 0.7));
-                for (let gx = g0; gx < g1; gx += STEP) {
-                  const w = r();
-                  if (w < 0.1) gy += (w < 0.05 ? -1 : 1) * STEP;
-                  gy = Math.max(y + 0.1, Math.min(yb - 0.08, gy));
-                  if (w < 0.86) dot(P(gx, gy), dk);
-                }
-              }
-              if (picks[6] < 0.28 && xb - xa > 0.8) {
-                const k = P(xa + 0.3 + picks[0] * (xb - xa - 0.6), y + 0.25);
-                dot(k, seam); dot(k, seam, 1, 0); dot(k, dk, -1, 0); dot(k, dk, 2, 0); dot(k, dk, 0, -1); dot(k, dk, 1, 1);
-              }
-              this.seg(P(xb, y), P(xb, yb), seam);
-            }
-            x += len;
-          }
-          this.seg(P(x0, yb), P(x1, yb), seam);
-        }
-      };
-
       planks(0, OW, 0, D, 17);
 
       // Carpet: a flat colour reads as plastic, so it gets a weave of flecks.
@@ -1595,6 +1540,70 @@
           this.seg(P(mt.x + 0.08, mt.y + mt.d - 0.12), P(mt.x + mt.w - 0.08, mt.y + mt.d - 0.12), this.tint(mt.color, -18));
         }
       }
+    }
+
+    paintRoom() {
+      const { W, D, OW, MR, PY, pp } = this.plan;
+      const pal = this.pal;
+      const c = this.ctx;
+      const m = c.getTransform();
+      const P = (x, y, z) => this.iso(x, y, z);
+      const dot = (p, col, dx = 0, dy = 0) => {
+        c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+        c.fillStyle = col;
+        c.fillRect(Math.round(p.x * m.a + m.e) + dx, Math.round(p.y * m.d + m.f) + dy, 1, 1);
+        c.restore();
+      };
+      const rng = (seed) => {
+        let v = seed % 2147483647; if (v <= 0) v += 2147483646;
+        return () => ((v = (v * 16807) % 2147483647) - 1) / 2147483646;
+      };
+      const STEP = ART / (TW / 2);     // one art pixel along a floor axis, in tiles
+
+      // Wood: boards of uneven length and tone, each with its own grain, laid
+      // in rows half a tile deep. The seed is the row, so the floor is the
+      // same floor every time it is repainted.
+      const planks = (x0, x1, y0, y1, salt) => {
+        const tones = [pal.wood1, pal.wood2, this.tint(pal.wood1, pal.dark ? 6 : -8)];
+        const seam = this.tint(pal.wood1, pal.dark ? -20 : -34);
+        let row = 0;
+        for (let y = y0; y < y1 - 1e-6; y += 0.5, row++) {
+          const r = rng(row * 131 + salt);
+          const yb = Math.min(y1, y + 0.5);
+          let x = x0 - r() * 1.5;
+          while (x < x1) {
+            const len = 1.2 + r() * 1.7;
+            const xa = Math.max(x0, x), xb = Math.min(x1, x + len);
+            const base = tones[Math.floor(r() * 3)];
+            const lt = this.tint(base, pal.dark ? 8 : 9), dk = this.tint(base, pal.dark ? -11 : -15);
+            const picks = [r(), r(), r(), r(), r(), r(), r()];
+            if (xb - xa > 0.05) {
+              this.poly([P(xa, y), P(xb, y), P(xb, yb), P(xa, yb)], base);
+              this.seg(P(xa, y), P(xb, y), lt, 0, 1);
+              for (let k = 0; k < 2; k++) {
+                let gy = y + 0.14 + picks[k] * 0.24;
+                const g0 = xa + 0.1 + picks[k + 2] * 0.3, g1 = Math.min(xb - 0.1, g0 + 0.4 + picks[k + 4] * (len - 0.7));
+                for (let gx = g0; gx < g1; gx += STEP) {
+                  const w = r();
+                  if (w < 0.1) gy += (w < 0.05 ? -1 : 1) * STEP;
+                  gy = Math.max(y + 0.1, Math.min(yb - 0.08, gy));
+                  if (w < 0.86) dot(P(gx, gy), dk);
+                }
+              }
+              if (picks[6] < 0.28 && xb - xa > 0.8) {
+                const k = P(xa + 0.3 + picks[0] * (xb - xa - 0.6), y + 0.25);
+                dot(k, seam); dot(k, seam, 1, 0); dot(k, dk, -1, 0); dot(k, dk, 2, 0); dot(k, dk, 0, -1); dot(k, dk, 1, 1);
+              }
+              this.seg(P(xb, y), P(xb, yb), seam);
+            }
+            x += len;
+          }
+          this.seg(P(x0, yb), P(x1, yb), seam);
+        }
+      };
+
+      this.paintFloor({ P, dot, STEP, planks, rng });
+
       // The waiting mat by the door, in the colour "waiting" has everywhere else.
       {
         const { x0, x1, y0, y1, spots } = this.plan.wait;
@@ -2635,6 +2644,7 @@
       if (p.mode === 'work' && p.desk) {
         const face = p.desk.side === 'n' ? 'front' : 'back';
         if (s.status === 'waiting' || s.status === 'error') return { pose: 'stand', face, act: 'wave', sitZ: 0 };
+        if (this.sceneArt.workState) return this.sceneArt.workState.call(this, p, face);
         if (p.desk.pose === 'stand') return { pose: 'stand', face, act: 'station', sitZ: 0 };
         return { pose: 'sit', face, act: s.status === 'tool' || s.status === 'typing' ? 'type' : 'think', sitZ: 0.34 };
       }
@@ -2715,7 +2725,7 @@
       const blink = Math.sin(t * 0.7 + p.phase * 3) > 0.985;
       // Basking shuts the eyes, and so does a bar that is nearly too heavy.
       const strain = st.act === 'lift' && ctxPct(s) >= 0.85;
-      const eyes = (blink || sleepy || napping || strain || st.act === 'sun') ? 'shut' : s.status === 'error' ? 'wide' : 'open';
+      const eyes = (blink || sleepy || napping || strain || SHUT_ACTS.has(st.act)) ? 'shut' : s.status === 'error' ? 'wide' : 'open';
       const sprite = catSprite(br, seated, front, eyes, kit);
       c.imageSmoothingEnabled = false;
       c.drawImage(sprite, -PXC, -PXH + 1);
@@ -2842,6 +2852,40 @@
           paw(-7, top + 5);
           paw(5, bite ? top - 1 : top + 3);
           if (bite && front) { c.fillStyle = '#ffffff'; c.fillRect(6, top - 2, 1, 1); }
+          break;
+        }
+        case 'zen': {
+          // Sitting still, paws together; what it is gathering drifts up
+          // round it in the colour of what it is doing.
+          paw(-1, top + 3);
+          c.fillStyle = STATUS_COLOR[s.status] || '#9b9a94';
+          for (let i = 0; i < 4; i++) {
+            const k = (((t * 0.45 + i / 4 + p.phase) % 1) + 1) % 1;
+            c.globalAlpha = k < 0.6 ? 0.9 : ((1 - k) / 0.4) * 0.9;
+            c.fillRect((i % 2 ? 1 : -1) * (9 + (i > 1 ? 3 : 0)), pxFloor(top + 7 - k * 17), 1, 2);
+          }
+          c.globalAlpha = 1;
+          break;
+        }
+        case 'kata': {
+          // one paw out, then the other
+          if (Math.sin(t * 6 + p.phase) > 0) { paw(8, top - 1); paw(-7, top + 3); } else { paw(-10, top - 1); paw(5, top + 3); }
+          break;
+        }
+        case 'brush': {
+          // a brush drawn down the paper and lifted again
+          const k = (Math.sin(t * 5 + p.phase) + 1) / 2;
+          const bx = 5, by = top + 2 + pxFloor(k * 3);
+          paw(-8, top + 3);
+          paw(bx, by);
+          if (front) {
+            c.fillStyle = '#d9b27a'; c.fillRect(bx + 1, by + 2, 1, 3);
+            c.fillStyle = INK; c.fillRect(bx + 1, by + 5, 1, 2);
+          }
+          break;
+        }
+        case 'fall': {
+          paw(-1, top + 3);
           break;
         }
         case 'kit:yarn': {
@@ -3338,16 +3382,20 @@
   }
 
   // ------------------------------------------------------------ scenes
-  // A scene is the same room dressed differently. The floor plan, the places
-  // to be and everything the cats do stay as they are; a scene changes what
-  // is seen. Each one may give:
-  //   palette   colours laid over the office palette, light and dark
-  //   panels    colours of the screens between desks
-  //   emoji     what an activity is called here
-  //   sceneFloor / sceneWalls   painted over the office floor / walls
-  //   any Office method by name (couch, fridge, wallDoor, …) to draw in its place
+  // A scene is another place for the same cats. It may give:
+  //   palette     colours laid over the office palette, light and dark
+  //   emoji       what an activity is called here
+  //   buildPlan   its own floor plan, returning what the office's returns
+  //   paintFloor  its own floors, to go with that plan
+  //   sceneWalls  painted over the plain walls
+  //   workState   what a cat at its place is doing, in place of typing
+  //   any Office method by name (desk, chair, wallDoor, …) to draw in its place
   const SCENE_ART = {
-    // A training hall: tatami, paper screens, dark wood.
+    // A training hall. Nobody works here: they practise. Each cat has a
+    // cushion and a low desk in the hall; thinking is sitting still, running
+    // a tool is drilling, writing a reply is brushwork. Beside the hall is a
+    // garden with a pond and a fall, and in front a yard, the way in, and a
+    // room for tea.
     dojo: {
       palette: {
         light: {
@@ -3373,13 +3421,177 @@
           pot: '#2b3f52',
         },
       },
-      panels: ['#eadfc4', '#e3d5b4', '#eadfc4', '#e3d5b4'],
-      emoji: { coffee: '🍵', arcade: '🥋', vending: '🍶', foosball: '⚫', phone: '🧘', whiteboard: '🖌️' },
+      emoji: { arcade: '🥋', vending: '🍶', foosball: '⚫', whiteboard: '🙏', meeting: '🍵', fridge: '🍡', beanbag: '💤' },
 
-      // Tatami where the carpet and the gym floor were: mats two tiles by
-      // one, laid like bricks, each with its cloth border.
-      sceneFloor({ P, STEP }) {
-        const pal = this.pal, { W, OW, MR, gym, mats } = this.plan;
+      buildPlan(nWorking) {
+        const COLS = 4;
+        const rows = Math.max(2, Math.ceil((nWorking + 2) / COLS));
+        const HW = 10.2;                          // the hall
+        const HD = 2.6 + (rows - 1) * 2.0 + 1.6;
+        const GW = 6.6;                           // beside it: garden, then tea room
+        const W = HW + GW, D = HD + 4.4;          // in front of it: the way in, the yard
+        const GD = D - 4.6;
+        const GX = 3.5;
+        const grid = new Grid(W, D);
+        const items = [], pois = [], desks = [];
+        const add = (depth, draw, live = false, state = null) => items.push({ depth, draw, live, state });
+        const solid = (x, y, w, d, pad) => grid.block(x, y, w, d, pad);
+        const poi = (x, y, act, face, opt = {}) => { pois.push({ x, y, act, face, sit: 0, ...opt }); return pois[pois.length - 1]; };
+
+        // ---- the hall: rows of places, all facing the room
+        for (let r = 0; r < rows; r++) {
+          for (let k = 0; k < COLS; k++) {
+            const x = 1.0 + k * 2.2, y = 2.6 + r * 2.0;
+            desks.push({ x, y, side: 'n', seat: { x: x + 0.7, y: y - 0.45 } });
+            solid(x + 0.25, y - 0.1, 0.9, 0.42, 0.04);
+          }
+        }
+        // the head of the hall: a drum, the alcove, a rack of wooden swords
+        add(0.5 + 0.38 + 0.52, () => this.taiko(0.5, 0.25));
+        solid(0.5, 0.25, 0.75, 0.55);
+        const rx = HW - 1.3;
+        add(rx + 0.35 + 0.5, () => this.serverRack(rx, 0.2));
+        solid(rx, 0.2, 0.7, 0.6);
+        const kamiza = HW / 2;
+        poi(kamiza - 0.1, 0.75, 'whiteboard', 'back');
+        const windows = [2.4, 6.8];
+        for (const x of windows) poi(x + 0.75, 0.75, 'window', 'back');
+        add(0.45 + HD - 0.45, () => this.plant(0.45, HD - 0.45), true);
+        solid(0.25, HD - 0.65, 0.4, 0.4);
+
+        // ---- the garden: a veranda, a fall, a pond, a wheel in the stream
+        const fx = HW + 4.0;
+        const stone = { x0: fx - 0.6, x1: fx + 0.6, y0: 1.4, y1: 2.2 };
+        const pond = { x0: HW + 2.3, x1: W - 0.5, y0: 2.45, y1: GD - 1.5 };
+        add(fx + 0.1 + 0.75, () => this.fallRock(fx - 0.7, 0.1));
+        solid(fx - 0.7, 0.1, 1.6, 1.3, 0.03);
+        poi(fx, 1.62, 'fall', 'front', { emoji: '💧' });
+        add(fx + 1.62 + 0.06, () => this.fallWater(fx, 1.62), true);
+        solid(pond.x0, pond.y0, pond.x1 - pond.x0, pond.y1 - pond.y0, 0.05);
+        for (const sy of [1.5, 3.3]) {
+          const sx = HW + 0.45;
+          add(sx + sy - 0.3, () => this.cushion(sx, sy));
+          poi(sx, sy, 'sun', 'front', { sit: 0.06, sleepy: true });
+        }
+        poi(HW + 1.7, 3.5, 'window', 'front', { emoji: '🐟' });
+        {
+          const cx = HW + 2.25, wy = GD - 0.9;
+          const q = poi(cx, wy + 0.18, 'wheel', 'front', { z: 0.14 });
+          add(cx + wy - 0.02, () => this.catWheel(cx, wy, q, false), () => !!this.userOf(q));
+          add(cx + wy + 0.6, () => this.catWheel(cx, wy, q, true));
+          solid(cx - 1.05, wy, 2.1, 0.36, 0.05);
+        }
+        add(W - 0.9 + 1.75, () => this.lantern(W - 0.9, 1.75));
+        solid(W - 1.15, 1.5, 0.5, 0.5, 0.02);
+        for (const [bx, by] of [[W - 0.6, 0.5], [HW + 1.5, 0.45]]) {
+          add(bx + by, () => this.bamboo(bx, by));
+          solid(bx - 0.3, by - 0.25, 0.6, 0.5, 0.02);
+        }
+
+        // ---- paper screens: between garden and tea room, and down its side
+        for (let x = HW + 3.6; x < W - 0.01; x += 1) this.glassY(add, x, GD, Math.min(1, W - x));
+        solid(HW + 3.6, GD - 0.05, W - HW - 3.6, 0.1, 0.05);
+        for (let y = GD + 1.2; y < D - 0.01; y += 1) this.glassX(add, HW, y, Math.min(1, D - y));
+        solid(HW - 0.05, GD + 1.2, 0.1, D - GD - 1.2, 0.05);
+
+        // ---- the tea room: a hearth with a kettle, a cushion on each side
+        {
+          const hx = HW + 2.6, hy = GD + 1.6;
+          add(hx + 0.7 + hy + 0.7, () => this.hearth(hx, hy), true);
+          solid(hx, hy, 1.4, 1.4, 0.03);
+          const seats = [[hx + 0.7, hy - 0.4, 'front'], [hx + 0.7, hy + 1.8, 'back'], [hx - 0.4, hy + 0.7, 'front'], [hx + 1.8, hy + 0.7, 'front']];
+          seats.forEach(([sx, sy, face], i) => {
+            add(sx + sy - 0.3, () => this.zabuton(sx, sy, i % 2 ? this.pal.couch : this.pal.chair));
+            poi(sx, sy, 'meeting', face, { sit: 0.06 });
+          });
+        }
+        add(W - 2.2 + 0.25 + GD + 0.5, () => this.waterCooler(W - 2.2, GD + 0.25));
+        solid(W - 2.3, GD + 0.2, 0.6, 0.5, 0.02);
+        poi(W - 1.95, GD + 1.05, 'water', 'back');
+        add(W - 1.0 + 0.42 + GD + 0.2 + 0.4, () => this.fridge(W - 1.0, GD + 0.2));
+        solid(W - 1.0, GD + 0.2, 0.85, 0.75);
+        poi(W - 0.6, GD + 1.45, 'fridge', 'back');
+        for (const [bx, by, col] of [[HW + 0.9, D - 0.9, '#8f2f2f'], [W - 1.0, D - 0.8, '#3f4f7a']]) {
+          add(bx + by, () => this.beanbag(bx, by, col));
+          poi(bx, by, 'beanbag', 'front', { sit: 0.18 });
+        }
+        {
+          const bx = W - 1.2, by = GD + 2.3;
+          add(bx + by + 0.2, () => this.cardboard(bx, by, false));
+          add(bx + by + 1.3, () => this.cardboard(bx, by, true));
+          solid(bx, by, 0.8, 0.7, 0.02);
+          poi(bx + 0.4, by + 0.38, 'box', 'front', { sit: 0.02, sleepy: true });
+        }
+
+        // ---- the yard: a dummy, the bar, a log to run on, a board game
+        {
+          const ax = GX + 0.5, ay = HD + 0.4;
+          add(ax + 0.35 + ay + 0.35, () => this.arcade(ax, ay));
+          solid(ax + 0.1, ay + 0.1, 0.5, 0.5, 0.02);
+          poi(ax + 0.35, ay + 1.15, 'arcade', 'back');
+        }
+        {
+          const lx = GX + 2.1, ly = HD + 0.5;
+          const q = poi(lx + 0.7, ly + 0.8, 'lift', 'front', { z: 0.05 });
+          add(lx + 0.7 + ly + 0.1, () => this.liftRack(lx, ly, q), () => !!this.userOf(q));
+          solid(lx + 0.1, ly, 1.2, 0.15, 0.03);
+        }
+        {
+          const tx = GX + 4.4, ty = HD + 0.5;
+          const q = poi(tx + 0.35, ty + 0.85, 'treadmill', 'front', { z: 0.34 });
+          add(tx + 0.35 + ty + 0.6, () => this.treadmill(tx, ty, q), () => !!this.userOf(q));
+          solid(tx, ty, 0.7, 1.5, 0.05);
+        }
+        add(GX + 5.45 + 0.5 + HD + 2.4, () => this.dumbbells(GX + 5.45, HD + 2.4));
+        solid(GX + 5.45, HD + 2.4, 1.0, 0.3, 0.04);
+        {
+          const gx = GX + 4.2, gy = D - 1.3;
+          add(gx + 0.8 + gy + 0.4, () => this.foosball(gx, gy));
+          solid(gx + 0.25, gy + 0.12, 1.1, 0.56, 0.04);
+          poi(gx - 0.2, gy + 0.4, 'foosball', 'side', { pair: 'fb' });
+          poi(gx + 1.8, gy + 0.4, 'foosball', 'side', { pair: 'fb' });
+        }
+        const mats = [
+          { x: GX + 0.4, y: D - 1.6, w: 1.3, d: 0.6 },
+          { x: GX + 2.0, y: D - 1.6, w: 1.3, d: 0.6 },
+        ];
+        for (const mt of mats) poi(mt.x + mt.w / 2, mt.y + mt.d / 2, 'yoga', 'front');
+
+        // ---- the way in: whoever is waiting for the user stands here
+        const dy = D - 1.2;
+        const wait = {
+          x0: 0.95, x1: 3.3, y0: dy - 0.8, y1: dy + 1.0,
+          spots: [{ x: 1.4, y: dy - 1.45, act: 'scratch' }],
+        };
+        for (const yy of [dy + 0.5, dy - 0.35]) for (const xx of [1.45, 2.2, 2.95]) wait.spots.push({ x: xx, y: yy });
+        add(0.45 + dy - 1.35 + 0.1, () => this.scratchPost(0.45, dy - 1.35), false, () => this.scratch || 0);
+        solid(0.2, dy - 1.6, 0.5, 0.5, 0.03);
+        add(0.5 + HD + 0.55, () => this.vending(0.12, HD + 0.15, '#b8323a'));
+        solid(0.1, HD + 0.15, 0.75, 0.75);
+        poi(1.3, HD + 0.55, 'vending', 'back');
+
+        const posters = [{ y: 2.2, w: 3.8, color: '#f2c230', ink: '#3b2a12', text: 'WANIN' }];
+        return {
+          W, D, OW: HW, OD: HD, MR: GD, PY: GD, RW: GW, HW, HD, GD, GX,
+          grid, items, props: [], pois, desks, windows, posters, pp: null, gym: null, mats, wait,
+          door: { x: 0.4, y: D - 1.2 }, seatZ: 0.06, kamiza, pond, stone,
+        };
+      },
+
+      paintFloor({ P, dot, STEP, planks }) {
+        const pal = this.pal, { W, D, HW, HD, GD, GX, mats, pond, stone } = this.plan;
+        const rect = (x0, y0, x1, y1, fill, stroke) => this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], fill, stroke);
+        const fleck = (x0, y0, x1, y1, lt, dk, a, b, n) => {
+          let i = 0;
+          for (let y = y0 + STEP / 2; y < y1; y += STEP, i++) {
+            let j = 0;
+            for (let x = x0 + STEP / 2; x < x1; x += STEP, j++) {
+              const k = (i * a + j * b) % n;
+              if (k === 0) dot(P(x, y), lt); else if (k === (n >> 1)) dot(P(x, y), dk);
+            }
+          }
+        };
+        // mats two tiles by one, laid like bricks, each with its cloth border
         const tatami = (x0, x1, y0, y1) => {
           const base = pal.carpet, alt = this.tint(base, pal.dark ? 5 : -6);
           const edge = pal.rugEdge, weave = this.tint(base, pal.dark ? -8 : -12);
@@ -3396,23 +3608,80 @@
               this.seg(P(xa, y), P(xb, y), edge);
             }
           }
-          this.poly([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], null, edge);
+          rect(x0, y0, x1, y1, null, edge);
         };
-        tatami(OW, W, 0, MR);
-        tatami(gym.x0, gym.x1, gym.y0, gym.y1);
+
+        // the hall: boards, and a field of mats under the rows
+        planks(0, HW, 0, HD, 17);
+        tatami(0.7, HW - 0.7, 1.7, HD - 0.5);
+
+        // the way in: stone flags
+        for (let i = 0; i < Math.ceil(GX * 2); i++) {
+          for (let j = 0; j < Math.ceil((D - HD) * 2); j++) {
+            const x = i / 2, y = HD + j / 2;
+            const x1 = Math.min(GX, x + 0.5), y1 = Math.min(D, y + 0.5);
+            const base = (i + j) % 2 ? pal.tileA : pal.tileB;
+            rect(x, y, x1, y1, base);
+            this.seg(P(x, y), P(x1, y), this.tint(base, 10), 0, 1);
+            this.seg(P(x, y1), P(x1, y1), this.tint(pal.tileB, -16));
+            this.seg(P(x1, y), P(x1, y1), this.tint(pal.tileB, -16));
+          }
+        }
+
+        // the yard: packed earth, and two mats to drill on
+        const earth = pal.dark ? '#4a4032' : '#d2ba92';
+        rect(GX, HD, HW, D, earth);
+        fleck(GX, HD, HW, D, this.tint(earth, 10), this.tint(earth, -14), 5, 11, 23);
+        rect(GX, HD, HW, D, null, this.tint(earth, pal.dark ? 16 : -26));
         const cloth = pal.dark ? ['#33406a', '#6a2424'] : ['#3f4f7a', '#8f2f2f'];
         mats.forEach((mt, i) => {
           const col = cloth[i % 2];
-          this.poly([P(mt.x, mt.y), P(mt.x + mt.w, mt.y), P(mt.x + mt.w, mt.y + mt.d), P(mt.x, mt.y + mt.d)], col, this.tint(col, -40));
+          rect(mt.x, mt.y, mt.x + mt.w, mt.y + mt.d, col, this.tint(col, -40));
           this.seg(P(mt.x + 0.08, mt.y + 0.1), P(mt.x + mt.w - 0.08, mt.y + 0.1), this.tint(col, 26));
         });
+
+        // the tea room
+        tatami(HW, W, GD, D);
+
+        // the garden: moss, the veranda's boards, gravel round the water
+        const moss = pal.dark ? '#34452c' : '#93b06c';
+        rect(HW, 0, W, GD, moss);
+        fleck(HW, 0, W, GD, this.tint(moss, 12), this.tint(moss, -14), 5, 11, 19);
+        planks(HW, HW + 0.9, 0, GD, 91);
+        const gravel = pal.dark ? '#55554f' : '#dbd6c6';
+        rect(pond.x0 - 0.45, 1.35, pond.x1 + 0.3, pond.y1 + 0.4, gravel);
+        fleck(pond.x0 - 0.45, 1.35, pond.x1 + 0.3, pond.y1 + 0.4, this.tint(gravel, 10), this.tint(gravel, -18), 3, 7, 11);
+        const rim = pal.dark ? '#44443f' : '#8e8e86';
+        for (let k = 0; k < 3; k++) {
+          const sx = HW + 1.05 + k * 0.42, sy = 1.6 + (k % 2) * 0.16;
+          rect(sx, sy, sx + 0.34, sy + 0.4, rim, this.tint(rim, -26));
+        }
+        rect(stone.x0, stone.y0, stone.x1, stone.y1, rim, this.tint(rim, -26));
+        this.seg(P(stone.x0, stone.y0), P(stone.x1, stone.y0), this.tint(rim, 18), 0, 1);
+
+        // the pond, with its corners cut, and two fish in it
+        const water = pal.dark ? '#27465c' : '#7fc0da';
+        const oct = (x0, y0, x1, y1, k) => [P(x0 + k, y0), P(x1 - k, y0), P(x1, y0 + k), P(x1, y1 - k), P(x1 - k, y1), P(x0 + k, y1), P(x0, y1 - k), P(x0, y0 + k)];
+        this.poly(oct(pond.x0 - 0.12, pond.y0 - 0.12, pond.x1 + 0.12, pond.y1 + 0.12, 0.62), rim);
+        this.poly(oct(pond.x0, pond.y0, pond.x1, pond.y1, 0.55), water, this.tint(water, -30));
+        this.poly(oct(pond.x0 + 0.45, pond.y0 + 0.4, pond.x1 - 0.45, pond.y1 - 0.4, 0.4), this.tint(water, -10));
+        const lit = this.tint(water, 30);
+        for (const [u, v, w] of [[0.8, 0.35, 0.5], [2.0, 0.7, 0.7], [1.2, 1.3, 0.4], [2.6, 1.5, 0.5]]) {
+          this.seg(P(pond.x0 + u, pond.y0 + v), P(pond.x0 + u + w, pond.y0 + v), lit);
+        }
+        for (const [u, v, col] of [[1.3, 0.8, '#f08a3c'], [2.5, 1.2, '#f4f1ea']]) {
+          this.art(P(pond.x0 + u, pond.y0 + v), (c) => {
+            c.fillStyle = col; c.fillRect(-2, 0, 5, 2); c.fillRect(3, -1, 1, 1); c.fillRect(3, 2, 1, 1);
+            c.fillStyle = '#de4b40'; c.fillRect(-1, 0, 2, 1);
+          });
+        }
       },
 
       // Posts and a head rail: the frame a plaster wall hangs in.
       sceneWalls({ P }) {
         const pal = this.pal, { W, D } = this.plan;
         const post = pal.trim, lit = this.tint(post, pal.dark ? 14 : 18);
-        for (let u = 0.7; u < W - 0.2; u += 2.4) {
+        for (let u = 0; u < W - 0.2; u += 2.2) {
           this.poly([P(u, 0, 0.12), P(u + 0.12, 0, 0.12), P(u + 0.12, 0, WALL_H), P(u, 0, WALL_H)], post);
           this.seg(P(u, 0, 0.12), P(u, 0, WALL_H), lit);
         }
@@ -3426,42 +3695,34 @@
         this.seg(P(0, 0, 2.2), P(0, D, 2.2), lit);
       },
 
-      // An alcove with a hanging scroll where the whiteboard was.
+      // The alcove at the head of the hall: a hanging scroll and a vase.
       wallBoard() {
-        const { OW, pal, B, edge } = this.wallKit();
-        const a0 = OW + 2.5, a1 = OW + 4.9;
+        const { pal, B, edge } = this.wallKit();
+        const k = this.plan.kamiza;
+        const a0 = k - 1.2, a1 = k + 1.2;
         this.poly([B(a0, 0.12), B(a1, 0.12), B(a1, 2.05), B(a0, 2.05)], this.tint(pal.wallL, pal.dark ? -10 : -12), edge);
         this.poly([B(a0, 0.12), B(a1, 0.12), B(a1, 0.3), B(a0, 0.3)], pal.deskTop, edge);
-        const S = (u, z) => B(OW + 3.15 + u, z);
+        const S = (u, z) => B(k - 0.75 + u, z);
         const paper = pal.dark ? '#cfc6ac' : '#f6f0de';
         this.poly([S(0, 0.5), S(1.1, 0.5), S(1.1, 1.95), S(0, 1.95)], pal.dark ? '#4c5a40' : '#6d7f5c', edge);
         this.poly([S(0.12, 0.68), S(0.98, 0.68), S(0.98, 1.8), S(0.12, 1.8)], paper);
         this.poly([S(-0.05, 0.44), S(1.15, 0.44), S(1.15, 0.5), S(-0.05, 0.5)], pal.trim);
         this.poly([S(-0.05, 1.95), S(1.15, 1.95), S(1.15, 2.0), S(-0.05, 2.0)], pal.trim);
-        // one brushed ring, open at the top right
+        // one brushed ring, open at the top right, and a seal
         this.art(S(0.55, 1.26), (c) => {
           pxRing(c, 0, 0, 5, 5, INK_HEX);
           pxRing(c, 0, 1, 5, 4, INK_HEX);
           c.fillStyle = paper; c.fillRect(3, -6, 3, 3);
           c.fillStyle = '#b8323a'; c.fillRect(4, 6, 2, 2);
         });
-        // a vase on the alcove floor
-        this.art(B(OW + 4.5, 0.3), (c) => {
+        this.art(B(k + 0.8, 0.3), (c) => {
           c.fillStyle = INK_HEX; c.fillRect(-3, -7, 6, 7);
           c.fillStyle = '#39536b'; c.fillRect(-2, -6, 4, 5);
           c.fillStyle = '#5f9a4c'; c.fillRect(0, -12, 1, 5); c.fillRect(-2, -11, 2, 1); c.fillRect(1, -13, 2, 1);
           c.fillStyle = '#f29aa8'; c.fillRect(-3, -12, 1, 1); c.fillRect(3, -14, 1, 1);
         });
       },
-
-      // A wooden plaque over the room, three gold crests on it.
-      wallSign() {
-        const { OW, pal, B, edge } = this.wallKit();
-        const sx = OW + 0.3;
-        this.poly([B(sx, 1.94), B(sx + 2.0, 1.94), B(sx + 2.0, 2.36), B(sx, 2.36)], this.tint(pal.trim, pal.dark ? 10 : -10), edge);
-        this.poly([B(sx + 0.06, 1.99), B(sx + 1.94, 1.99), B(sx + 1.94, 2.31), B(sx + 0.06, 2.31)], null, '#b8923a');
-        for (const u of [0.5, 1.0, 1.5]) this.art(B(sx + u, 2.15), (c) => { pxDisc(c, 0, 0, 2, 2, '#e8cf8a'); c.fillStyle = '#8a6a2a'; c.fillRect(0, 0, 1, 1); });
-      },
+      wallSign() {},
 
       // A sliding paper door with a shop curtain over it, a step stone below.
       wallDoor() {
@@ -3485,7 +3746,7 @@
         this.poly([P(0.05, dy - 0.6), P(0.9, dy - 0.6), P(0.9, dy + 0.6), P(0.05, dy + 0.6)], stone, this.tint(stone, -30));
       },
 
-      // Paper screens round the back room: a wooden skirt, a lattice above.
+      // Paper screens: a wooden skirt, a lattice above.
       glassX(add, x, y, d) {
         add(x + y + d / 2 + 0.02, () => {
           const P = (a, b, c) => this.iso(a, b, c), pal = this.pal;
@@ -3505,7 +3766,65 @@
         });
       },
 
-      // A rack of wooden swords where the servers were.
+      // ---- a place in the hall
+      // What a cat does at its place. Thinking is sitting still; running a
+      // tool is drilling, on its feet; writing a reply is brushwork.
+      workState(p, face) {
+        const st = (p.s || {}).status;
+        if (st === 'tool') return { pose: 'stand', face, act: 'kata', sitZ: 0.06 };
+        return { pose: 'sit', face, act: st === 'typing' ? 'brush' : 'zen', sitZ: 0.06 };
+      },
+
+      // A low desk with paper, an ink stone, and a lamp that burns the
+      // colour of what its cat is doing.
+      desk(dk, p) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const x = dk.x + 0.25, y = dk.y - 0.1, z = 0.3;
+        for (const lx of [x + 0.04, x + 0.78]) this.box(lx, y + 0.06, 0, 0.08, 0.3, 0.24, pal.deskL, pal.deskL, pal.deskR);
+        this.box(x, y, 0.24, 0.9, 0.42, 0.06, pal.deskTop, pal.deskL, pal.deskR);
+        const worker = p && p.mode === 'work' && !p.path.length ? p : null;
+        const paper = pal.dark ? '#cfc6ac' : '#f6f0de';
+        this.poly([P(x + 0.22, y + 0.07, z), P(x + 0.64, y + 0.07, z), P(x + 0.64, y + 0.35, z), P(x + 0.22, y + 0.35, z)], paper, this.tint(paper, -50));
+        if (worker) {
+          this.seg(P(x + 0.3, y + 0.14, z), P(x + 0.54, y + 0.14, z), INK_HEX);
+          this.seg(P(x + 0.3, y + 0.22, z), P(x + 0.46, y + 0.22, z), INK_HEX);
+        }
+        this.art(P(x + 0.76, y + 0.2, z), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-2, -2, 4, 3);
+          c.fillStyle = '#4a4e55'; c.fillRect(-1, -1, 2, 1);
+        });
+        const col = worker ? STATUS_COLOR[worker.s.status] || '#f2c230' : null;
+        const flick = Math.sin(this.t / 130 + dk.x * 3) > 0 ? 1 : 0;
+        this.art(P(x + 0.1, y + 0.2, z), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-2, -8, 5, 9);
+          c.fillStyle = col ? '#fff6dc' : pal.dark ? '#8a8472' : '#d9d2bc'; c.fillRect(-1, -7, 3, 6);
+          if (col) { c.fillStyle = col; c.fillRect(0, -5 - flick, 1, 3); }
+          c.fillStyle = '#3a2a1e'; c.fillRect(-2, 0, 5, 1); c.fillRect(-2, -9, 5, 1);
+        });
+      },
+      chair(dk) {
+        this.zabuton(dk.seat.x, dk.seat.y, this.pal.chair);
+      },
+      zabuton(x, y, col) {
+        this.box(x - 0.27, y - 0.25, 0, 0.54, 0.5, 0.06, this.shade(col, 16), col, this.shade(col, -16));
+        this.art(this.iso(x, y, 0.06), (c) => { c.fillStyle = this.shade(col, -34); c.fillRect(0, -1, 1, 1); });
+      },
+
+      // ---- the head of the hall
+      taiko(x, y) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        this.box(x + 0.08, y + 0.05, 0, 0.6, 0.45, 0.3, pal.deskTop, pal.deskL, pal.deskR);
+        this.art(P(x + 0.38, y + 0.3, 0.3), (c) => {
+          c.fillStyle = INK_HEX; c.fillRect(-7, -12, 14, 13);
+          c.fillStyle = '#a8452e'; c.fillRect(-6, -10, 12, 10);
+          c.fillStyle = '#8a3522'; c.fillRect(-6, -10, 2, 10);
+          c.fillStyle = '#c45a3c'; c.fillRect(-1, -10, 3, 10);
+          c.fillStyle = INK_HEX; c.fillRect(-7, -13, 14, 1);
+          pxDisc(c, 0, -11, 6, 2, '#efe2c4');
+          c.fillStyle = '#3a2a1e';
+          for (let i = -5; i <= 5; i += 2) { c.fillRect(i, -8, 1, 1); c.fillRect(i, -2, 1, 1); }
+        });
+      },
       serverRack(x, y) {
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
         this.box(x, y + 0.02, 0, 0.7, 0.1, 1.7, pal.deskTop, pal.deskL, pal.deskR);
@@ -3519,96 +3838,86 @@
           });
         }
       },
-      rackLights() {},
 
-      // A drum on a stand where the printer was.
-      printer(x, y) {
-        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
-        this.box(x + 0.08, y + 0.05, 0, 0.6, 0.45, 0.3, pal.deskTop, pal.deskL, pal.deskR);
-        this.art(P(x + 0.38, y + 0.3, 0.3), (c) => {
-          c.fillStyle = INK_HEX; c.fillRect(-7, -12, 14, 13);
-          c.fillStyle = '#a8452e'; c.fillRect(-6, -10, 12, 10);
-          c.fillStyle = '#8a3522'; c.fillRect(-6, -10, 2, 10);
-          c.fillStyle = '#c45a3c'; c.fillRect(-1, -10, 3, 10);
-          c.fillStyle = INK_HEX; c.fillRect(-7, -13, 14, 1);
-          pxDisc(c, 0, -11, 6, 2, '#efe2c4');
-          c.fillStyle = '#3a2a1e'; for (let i = -5; i <= 5; i += 2) c.fillRect(i, -8, 1, 1);
-          c.fillStyle = '#3a2a1e'; for (let i = -5; i <= 5; i += 2) c.fillRect(i, -2, 1, 1);
+      // ---- the garden
+      // A rock in three steps with moss on top; the water comes off the front.
+      fallRock(x, y) {
+        const dark = this.pal.dark;
+        const st = dark ? '#55554f' : '#8c8c84', lt = this.tint(st, 14), dk = this.tint(st, -16);
+        const moss = dark ? '#3f5a34' : '#86a865';
+        this.box(x, y, 0, 1.6, 1.3, 0.9, lt, st, dk);
+        this.box(x + 0.2, y + 0.1, 0.9, 1.25, 1.05, 0.5, lt, st, dk);
+        this.box(x + 0.5, y + 0.2, 1.4, 0.7, 0.75, 0.3, moss, st, dk);
+        const F = (u, z) => this.iso(x + u, y + 1.3, z);
+        for (const [u, z] of [[0.25, 0.5], [1.3, 0.3], [0.5, 0.2], [1.05, 0.68]]) {
+          this.art(F(u, z), (c) => { c.fillStyle = dk; c.fillRect(0, 0, 2, 1); c.fillRect(1, 1, 2, 1); });
+        }
+        for (const [u, v] of [[0.3, 0.2], [1.3, 0.6]]) {
+          this.art(this.iso(x + u, y + v, 0.9), (c) => { c.fillStyle = moss; c.fillRect(-2, -1, 4, 2); c.fillRect(-1, -2, 2, 1); });
+        }
+      },
+      fallWater(cx, fy) {
+        const t = this.t / 1000;
+        this.art(this.iso(cx, fy, 0), (c) => {
+          const H = 28;
+          c.globalAlpha = 0.5; c.fillStyle = '#bfe6f5'; c.fillRect(-4, -H, 8, H);
+          c.globalAlpha = 0.9; c.fillStyle = '#ffffff';
+          for (let i = 0; i < 4; i++) {
+            const k = (t * 1.6 + i * 0.27) % 1;
+            c.fillRect(-3 + i * 2, Math.round(-H + k * (H - 4)), 1, 4);
+          }
+          const s = Math.sin(t * 9) > 0 ? 1 : 0;
+          c.globalAlpha = 0.85;
+          c.fillRect(-7 - s, -2, 2, 1); c.fillRect(5 + s, -3, 2, 1); c.fillRect(-2, -1 - s, 1, 1); c.fillRect(2, -2 + s, 1, 1);
+          c.globalAlpha = 1;
         });
       },
-
-      // Straw-wrapped barrels, two high, where the vending machines were.
-      vending(x, y, color) {
-        const P = (a, b, c) => this.iso(a, b, c);
-        this.art(P(x + 0.36, y + 0.4, 0), (c) => {
-          pxDisc(c, 0, 0, 7, 2, this.pal.shadow);
-          for (const top of [-12, -24]) {
-            c.fillStyle = INK_HEX; c.fillRect(-7, top - 1, 14, 14);
-            c.fillStyle = '#dcc48e'; c.fillRect(-6, top, 12, 12);
-            c.fillStyle = '#c2a56c'; c.fillRect(-6, top, 2, 12);
-            c.fillStyle = '#8a6a3a'; c.fillRect(-6, top + 2, 12, 1); c.fillRect(-6, top + 9, 12, 1);
-            c.fillStyle = '#f6f0de'; c.fillRect(-3, top + 4, 7, 4);
-            c.fillStyle = color; c.fillRect(-1, top + 5, 3, 2);
-            pxDisc(c, 0, top, 6, 1, '#efe2c4');
+      lantern(x, y) {
+        const st = this.pal.dark ? '#5a5a56' : '#a9a9a2', lt = this.tint(st, 16), dk = this.tint(st, -18);
+        this.box(x - 0.2, y - 0.2, 0, 0.4, 0.4, 0.12, lt, st, dk);
+        this.box(x - 0.08, y - 0.08, 0.12, 0.16, 0.16, 0.6, lt, st, dk);
+        this.box(x - 0.2, y - 0.2, 0.72, 0.4, 0.4, 0.08, lt, st, dk);
+        this.box(x - 0.14, y - 0.14, 0.8, 0.28, 0.28, 0.3, lt, st, dk);
+        this.art(this.iso(x, y + 0.14, 0.88), (c) => { c.fillStyle = '#ffd98a'; c.fillRect(-1, -3, 2, 3); });
+        this.box(x - 0.27, y - 0.27, 1.1, 0.54, 0.54, 0.08, lt, st, dk);
+        this.box(x - 0.1, y - 0.1, 1.18, 0.2, 0.2, 0.1, lt, st, dk);
+      },
+      bamboo(x, y) {
+        const g = this.pal.dark ? ['#3f6a3a', '#56864a'] : ['#5f9a4c', '#86bd62'];
+        this.art(this.iso(x, y, 0), (c) => {
+          pxDisc(c, 0, 0, 6, 2, this.pal.shadow);
+          for (const [sx, h] of [[-4, 30], [-1, 36], [2, 32], [5, 27]]) {
+            c.fillStyle = INK_HEX; c.fillRect(sx - 1, -h - 1, 4, h + 1);
+            c.fillStyle = g[0]; c.fillRect(sx, -h, 2, h);
+            c.fillStyle = g[1]; c.fillRect(sx, -h, 1, h);
+            c.fillStyle = INK_HEX; for (let k = 7; k < h; k += 8) c.fillRect(sx, -k, 2, 1);
+            c.fillStyle = g[1]; c.fillRect(sx + 2, -h + 2, 3, 1); c.fillRect(sx - 3, -h + 5, 3, 1);
+            c.fillStyle = g[0]; c.fillRect(sx + 2, -h + 9, 4, 1); c.fillRect(sx - 4, -h + 13, 4, 1);
           }
         });
       },
-      vendingLight() {},
 
-      // A board game on a low table where the table football was.
-      foosball(x, y) {
+      // ---- the tea room
+      hearth(x, y) {
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
-        this.box(x + 0.25, y + 0.12, 0, 1.1, 0.56, 0.3, pal.deskTop, pal.deskL, pal.deskR);
-        const z = 0.36;
-        this.box(x + 0.4, y + 0.14, 0.3, 0.8, 0.52, 0.06, '#e6c682', '#c9a560', '#b08e4e');
-        for (let i = 1; i < 6; i++) this.seg(P(x + 0.4 + i * 0.8 / 6, y + 0.14, z), P(x + 0.4 + i * 0.8 / 6, y + 0.66, z), '#9a7a45');
-        for (let j = 1; j < 4; j++) this.seg(P(x + 0.4, y + 0.14 + j * 0.13, z), P(x + 1.2, y + 0.14 + j * 0.13, z), '#9a7a45');
-        for (const [u, v, col] of [[0.55, 0.3, '#1c1c1a'], [0.7, 0.42, '#fbfbf5'], [0.83, 0.28, '#1c1c1a'], [0.95, 0.5, '#fbfbf5'], [1.05, 0.36, '#1c1c1a'], [0.62, 0.52, '#fbfbf5']]) {
-          this.art(P(x + u, y + v, z), (c) => { c.fillStyle = col; c.fillRect(-1, -1, 2, 1); });
-        }
-      },
-      foosRods() {},
-
-      // A long dark table with a runner, a pot and cups.
-      meetingTable(x, y) {
-        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
-        const top = this.shade(pal.deskTop, -6);
-        for (const lx of [x + 0.25, x + 2.6]) this.box(lx, y + 0.2, 0, 0.15, 1.0, 0.7, pal.deskL, pal.deskL, pal.deskR);
-        this.box(x, y, 0.7, 3.0, 1.4, 0.08, top, pal.deskL, pal.deskR);
-        const rn = pal.dark ? '#6a2424' : '#8f2f2f';
-        this.poly([P(x + 0.3, y + 0.5, 0.78), P(x + 2.7, y + 0.5, 0.78), P(x + 2.7, y + 0.9, 0.78), P(x + 0.3, y + 0.9, 0.78)], rn, this.tint(rn, -30));
-        this.art(P(x + 1.5, y + 0.74, 0.78), (c) => {
-          c.fillStyle = INK_HEX; c.fillRect(-4, -6, 8, 6); c.fillRect(4, -5, 2, 2); c.fillRect(-1, -7, 2, 1);
-          c.fillStyle = '#34373c'; c.fillRect(-3, -5, 6, 4);
-          c.fillStyle = '#55595f'; c.fillRect(-2, -5, 2, 1);
+        this.box(x, y, 0, 1.4, 1.4, 0.3, pal.deskTop, pal.deskL, pal.deskR);
+        this.poly([P(x + 0.4, y + 0.4, 0.3), P(x + 1.0, y + 0.4, 0.3), P(x + 1.0, y + 1.0, 0.3), P(x + 0.4, y + 1.0, 0.3)], '#d9d4c9', INK_HEX);
+        const glow = Math.sin(this.t / 300) > 0;
+        this.art(P(x + 0.7, y + 0.78, 0.3), (c) => {
+          c.fillStyle = '#e8743a'; c.fillRect(-3, 0, 2, 1); c.fillRect(1, 1, 2, 1);
+          c.fillStyle = glow ? '#ffd98a' : '#f2a04a'; c.fillRect(-1, 0, 1, 1); c.fillRect(2, 0, 1, 1);
+          c.fillStyle = INK_HEX; c.fillRect(-4, -9, 9, 7); c.fillRect(5, -7, 2, 1);
+          c.fillStyle = '#34373c'; c.fillRect(-3, -8, 7, 5);
+          c.fillStyle = '#4a4e55'; c.fillRect(-2, -8, 2, 1);
+          c.fillStyle = INK_HEX; c.fillRect(-3, -12, 1, 3); c.fillRect(3, -12, 1, 3); c.fillRect(-3, -13, 7, 1);
+          // steam
+          c.fillStyle = 'rgba(255,255,255,.7)';
+          const k = Math.floor(this.t / 260) % 3;
+          c.fillRect(6, -10 - k, 1, 1); c.fillRect(7, -12 - k, 1, 1);
         });
-        for (const [u, v] of [[0.75, 0.35], [2.2, 0.35], [1.0, 1.1], [2.35, 1.1]]) this.art(P(x + u, y + v, 0.78), (c) => pxMug(c, '#e9e4d4', '#7a9a52'));
+        for (const [u, v] of [[0.18, 0.2], [1.2, 0.3], [0.25, 1.2], [1.15, 1.15]]) this.art(P(x + u, y + v, 0.3), (c) => pxMug(c, '#e9e4d4', '#7a9a52'));
       },
-
-      // A cushion on a block.
-      stool(x, y, h) {
-        const pal = this.pal;
-        this.box(x - 0.2, y - 0.2, 0, 0.4, 0.4, h - 0.02, pal.deskTop, pal.deskL, pal.deskR);
-        this.box(x - 0.23, y - 0.23, h - 0.02, 0.46, 0.46, 0.09, this.shade(pal.chair, 16), pal.chair, this.shade(pal.chair, -16));
-      },
-
-      // An iron kettle over coals where the coffee machine was.
-      coffeeMachine(x, y) {
-        const P = (a, b, c) => this.iso(a, b, c), pal = this.pal;
-        this.box(x + 0.02, y + 0.05, 0.9, 0.46, 0.4, 0.14, pal.deskTop, pal.deskL, pal.deskR);
-        this.art(P(x + 0.25, y + 0.25, 1.04), (c) => {
-          c.fillStyle = '#d9d4c9'; c.fillRect(-4, -1, 9, 2);
-          c.fillStyle = '#e8743a'; c.fillRect(-2, -1, 1, 1); c.fillRect(2, 0, 1, 1);
-          c.fillStyle = INK_HEX; c.fillRect(-4, -8, 9, 7); c.fillRect(5, -6, 2, 1);
-          c.fillStyle = '#34373c'; c.fillRect(-3, -7, 7, 5);
-          c.fillStyle = '#4a4e55'; c.fillRect(-2, -7, 2, 1);
-          c.fillStyle = INK_HEX; c.fillRect(-3, -11, 1, 3); c.fillRect(3, -11, 1, 3); c.fillRect(-3, -12, 7, 1);
-        });
-        this.box(x + 0.62, y + 0.12, 0.9, 0.14, 0.14, 0.2, '#5f9a4c', '#4a7a3b', '#3d6631');
-      },
-      coffeeLight() {},
-
-      // A chest of drawers with iron pulls where the fridge was.
+      // a chest of drawers with iron pulls, a jar on top
       fridge(x, y) {
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
         this.box(x, y, 0, 0.85, 0.75, 1.7, pal.deskTop, pal.deskL, pal.deskR);
@@ -3626,8 +3935,7 @@
           c.fillStyle = '#efe2c4'; c.fillRect(-3, -8, 6, 1);
         });
       },
-
-      // A water jar and a ladle where the cooler was.
+      // a water jar and a ladle
       waterCooler(x, y) {
         const P = (a, b, c) => this.iso(a, b, c);
         this.art(P(x + 0.21, y + 0.25, 0), (c) => {
@@ -3639,9 +3947,9 @@
           c.fillStyle = '#d9b27a'; c.fillRect(2, -18, 1, 6); c.fillRect(1, -13, 3, 1);
         });
       },
-      coolerBubble() {},
 
-      // A wooden training dummy where the arcade cabinet was.
+      // ---- the yard and the way in
+      // a wooden dummy: a post with three arms and a leg
       arcade(x, y) {
         const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
         this.box(x + 0.1, y + 0.1, 0, 0.5, 0.5, 0.12, pal.deskTop, pal.deskL, pal.deskR);
@@ -3659,7 +3967,57 @@
           c.fillStyle = '#d9b27a'; c.fillRect(2, 0, 7, 1);
         });
       },
-      arcadeScreen() {},
+      // a log on two trestles, to run on
+      treadmill(x, y, q) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        const wood = pal.dark ? '#7a5a3a' : '#b98a58', dk = this.tint(wood, -22), lt = this.tint(wood, 16);
+        for (const yy of [y + 0.05, y + 1.3]) this.box(x + 0.05, yy, 0, 0.6, 0.15, 0.14, pal.deskTop, pal.deskL, pal.deskR);
+        this.box(x + 0.12, y, 0.14, 0.46, 1.5, 0.2, lt, wood, dk);
+        const turn = this.userOf(q) ? Math.floor(this.t / 120) % 2 : 0;
+        this.art(P(x + 0.35, y + 1.5, 0.24), (c) => {
+          pxRing(c, 0, 0, 2, 2, dk);
+          c.fillStyle = dk; c.fillRect(turn ? -1 : 0, turn ? 0 : -1, 1, 1);
+        });
+      },
+      // stone locks, small to large
+      dumbbells(x, y) {
+        const st = this.pal.dark ? '#5a5a56' : '#a9a9a2';
+        for (let k = 0; k < 3; k++) {
+          const s = 0.2 + k * 0.04;
+          this.box(x + k * 0.34, y, 0, s, s, s, this.tint(st, 16), st, this.tint(st, -18));
+          this.art(this.iso(x + k * 0.34 + s / 2, y + s / 2, s), (c) => {
+            c.fillStyle = INK_HEX; c.fillRect(-2, -3, 4, 1); c.fillRect(-2, -2, 1, 2); c.fillRect(1, -2, 1, 2);
+          });
+        }
+      },
+      // a board game on a low table
+      foosball(x, y) {
+        const pal = this.pal, P = (a, b, c) => this.iso(a, b, c);
+        this.box(x + 0.25, y + 0.12, 0, 1.1, 0.56, 0.3, pal.deskTop, pal.deskL, pal.deskR);
+        const z = 0.36;
+        this.box(x + 0.4, y + 0.14, 0.3, 0.8, 0.52, 0.06, '#e6c682', '#c9a560', '#b08e4e');
+        for (let i = 1; i < 6; i++) this.seg(P(x + 0.4 + i * 0.8 / 6, y + 0.14, z), P(x + 0.4 + i * 0.8 / 6, y + 0.66, z), '#9a7a45');
+        for (let j = 1; j < 4; j++) this.seg(P(x + 0.4, y + 0.14 + j * 0.13, z), P(x + 1.2, y + 0.14 + j * 0.13, z), '#9a7a45');
+        for (const [u, v, col] of [[0.55, 0.3, '#1c1c1a'], [0.7, 0.42, '#fbfbf5'], [0.83, 0.28, '#1c1c1a'], [0.95, 0.5, '#fbfbf5'], [1.05, 0.36, '#1c1c1a'], [0.62, 0.52, '#fbfbf5']]) {
+          this.art(P(x + u, y + v, z), (c) => { c.fillStyle = col; c.fillRect(-1, -1, 2, 1); });
+        }
+      },
+      // straw-wrapped barrels, two high
+      vending(x, y, color) {
+        const P = (a, b, c) => this.iso(a, b, c);
+        this.art(P(x + 0.36, y + 0.4, 0), (c) => {
+          pxDisc(c, 0, 0, 7, 2, this.pal.shadow);
+          for (const top of [-12, -24]) {
+            c.fillStyle = INK_HEX; c.fillRect(-7, top - 1, 14, 14);
+            c.fillStyle = '#dcc48e'; c.fillRect(-6, top, 12, 12);
+            c.fillStyle = '#c2a56c'; c.fillRect(-6, top, 2, 12);
+            c.fillStyle = '#8a6a3a'; c.fillRect(-6, top + 2, 12, 1); c.fillRect(-6, top + 9, 12, 1);
+            c.fillStyle = '#f6f0de'; c.fillRect(-3, top + 4, 7, 4);
+            c.fillStyle = color; c.fillRect(-1, top + 5, 3, 2);
+            pxDisc(c, 0, top, 6, 1, '#efe2c4');
+          }
+        });
+      },
     },
   };
   const SCENES = ['office', ...Object.keys(SCENE_ART)];
