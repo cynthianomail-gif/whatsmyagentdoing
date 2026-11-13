@@ -195,6 +195,10 @@
   .report .plan details { margin-top: 10px; }
   .report .plan summary { font-size: 12px; font-weight: 600; color: #e5484d; cursor: pointer; }
   .report .plan .sub { margin: 8px 0 0; }
+  .report .plan-brief { display: flex; align-items: baseline; gap: 8px; width: 100%; margin: 0 0 14px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+  .report .plan-brief:hover { border-color: var(--ink); }
+  .report .plan-brief .n { margin-left: auto; font-weight: 400; color: var(--muted); }
+  .report a.btn { display: inline-flex; align-items: center; text-decoration: none; }
   .report .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .report .tabs { display: flex; gap: 6px; margin: -4px 0 12px; border-bottom: 1px solid var(--line); }
   .report .tabs button { padding: 6px 10px 8px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -838,8 +842,37 @@ function reportText(d) {
   return out.concat(planText(d.plan)).join('\n');
 }
 
-// ---- the team's planning board on today's report (src/board.js)
+// ---- the team's planning board: its own tab, and a line on today's report (src/board.js)
 const PL = () => RL().plan || I18N.en.rep.plan;
+let planState = null;   // what /api/board said last
+fetch('/api/board').then((r) => r.json()).then((s) => { planState = s; }).catch(() => {});
+// the line on today's report: the counts, and the way to the tab
+function planBrief(plan) {
+  if (!plan || !plan.configured) return '';
+  const P = PL(), x = plan.day;
+  const what = x ? P.brief(x.counts.today, x.counts.week, x.counts.over) : P.fail + (plan.error || '');
+  return `<button type="button" class="plan-brief" data-tab="plan"><span>📅 ${esc(P.tab)}</span><span class="n">${esc(what)} ›</span></button>`;
+}
+// The tab: the whole day of the board, a way to look again, and the board itself.
+async function openPlan(fresh) {
+  const seq = ++reportSeq;
+  store.set('boardTab', 'plan');
+  const back = boardBack(), P = PL(), R = RL();
+  const btn = back.querySelector('[data-p=refresh]');
+  if (btn) { btn.disabled = true; btn.textContent = P.refreshing; }
+  let plan = null;
+  try { plan = await fetch('/api/board' + (fresh ? '?refresh=1' : '')).then((r) => r.json()); } catch { /* shown as unreadable */ }
+  if (seq !== reportSeq) return;
+  if (plan) planState = plan;
+  plan = plan || { configured: true, ok: false, error: P.noOffice, day: null };
+  const link = plan.link && /^https:\/\/script\.google\.com\//.test(plan.link) ? `<a class="btn" href="${esc(plan.link)}" target="_blank" rel="noopener">${esc(P.open)} ↗</a>` : '';
+  back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(P.tab)}">
+    ${boardTabs('plan')}
+    ${planHtml(plan)}
+    <div class="foot"><span class="pop-all"><button type="button" class="btn" data-p="refresh">${esc(P.refresh)}</button>${link}</span><button type="button" class="btn" data-r="close">${esc(R.close)}</button></div>
+  </div>`;
+  back.hidden = false;
+}
 const planDate = (d) => { const [, m, day] = String(d).split('-').map(Number); return m && day ? `${m}/${day}` : String(d); };
 const planLine = (it) => `${it.game}・${it.what}`;
 function planText(plan) {
@@ -879,7 +912,9 @@ function boardBack() {
   back.addEventListener('click', (e) => {
     if ((e.target === back && downOn === back) || e.target.closest('[data-r=close]')) { closeBoard(); return; }
     const tab = e.target.closest('[data-tab]');
-    if (tab) { if (tab.dataset.tab === 'notes') openNotes(); else openReport(); return; }
+    if (tab) { if (tab.dataset.tab === 'notes') openNotes(); else if (tab.dataset.tab === 'plan') openPlan(); else openReport(); return; }
+    const pa = e.target.closest('[data-p]');
+    if (pa) { if (pa.dataset.p === 'refresh') openPlan(true); return; }
     if (e.target.closest('[data-n]')) { noteBook.click(e); return; }
     const go = e.target.closest('[data-day]');
     if (go) { openReport(go.dataset.day); return; }
@@ -899,11 +934,17 @@ function closeBoard() {
 function boardTabs(on) {
   const todo = noteBook.todo.length;
   const tab =(name, text) => `<button type="button" role="tab" data-tab="${name}" aria-selected="${on === name}" class="${on === name ? 'on' : ''}">${text}</button>`;
-  return `<div class="tabs" role="tablist">${tab('report', '📋 ' + esc(RL().title))}${tab('notes', '📝 ' + esc(NL().tab) + (todo ? ` <i>${todo}</i>` : ''))}</div>`;
+  // the planning board's tab, once there is a board to show (--board)
+  const due = planState && planState.day ? planState.day.counts.today : 0;
+  const plan = planState && planState.configured ? tab('plan', '📅 ' + esc(PL().tab) + (due ? ` <i>${due}</i>` : '')) : '';
+  return `<div class="tabs" role="tablist">${tab('report', '📋 ' + esc(RL().title))}${tab('notes', '📝 ' + esc(NL().tab) + (todo ? ` <i>${todo}</i>` : ''))}${plan}</div>`;
 }
 // The board on the wall opens the tab that was open last; a report nobody has read yet comes first.
 function openBoard() {
-  if (!reportNew && store.get('boardTab', 'report') === 'notes') openNotes(); else openReport();
+  const last = store.get('boardTab', 'report');
+  if (!reportNew && last === 'notes') openNotes();
+  else if (!reportNew && last === 'plan' && planState && planState.configured) openPlan();
+  else openReport();
 }
 // Open the card on a day: today when none is named.
 async function openReport(day) {
@@ -925,6 +966,7 @@ async function openReport(day) {
   const want = day || today;
   if (!rec) rec = want === today ? liveRecord() : { day: want, sessions: [] };
   const plan = want === today ? await planAsk : null;
+  if (plan) planState = plan;
   if (seq !== reportSeq) return;
   const R = RL(), d = reportData(rec);
   d.plan = plan;
@@ -946,7 +988,7 @@ async function openReport(day) {
     <div class="nav">${step(days[idx - 1], 'prev', R.prev || '', '◀')}<b>${esc(reportDate(want, { month: 'numeric', day: 'numeric', weekday: 'short' }))}</b>${want === today ? `<span class="tag">${esc(R.today || '')}</span>` : ''}<span class="sp"></span>${step(days[idx + 1], 'next', R.next || '', '▶')}</div>
     <div class="days">${strip.map((x) => `<button type="button" data-day="${esc(x.day)}" class="${x.day === want ? 'on' : ''}" title="${esc(x.day)}・${x.turns || 0} ${esc(L.turnsL)}・${fmtTokens(x.tokens || 0)}"><span class="bar"><i style="height:${Math.round((100 * (x.tokens || 0)) / peak)}%"></i></span><b>${esc(reportDate(x.day, { day: 'numeric' }).replace(/[^0-9]/g, '') || x.day.slice(-2))}</b><small>${esc(x.day === today ? (R.today || '') : reportDate(x.day, { weekday: 'short' }))}</small></button>`).join('')}</div>
     <div class="span">${strip.length > 1 ? `${esc(R.span ? R.span(strip.length) : '')}　${sum.turns} ${esc(L.turnsL)}・${fmtTokens(sum.tokens)} ${esc(L.tokensL)}` : ''}</div>
-    ${planHtml(plan)}
+    ${planBrief(plan)}
     ${!d.cats ? `<div class="sub">${esc(want === today ? R.none : (R.noneDay || R.none))}</div>` : `
     <div class="big">
       <div><b>${d.turns}</b><span>${esc(L.turnsL)}</span></div>

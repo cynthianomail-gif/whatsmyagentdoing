@@ -178,8 +178,10 @@ function createBoard({ file = CONFIG, fetchImpl = globalThis.fetch, now = Date.n
     return busy;
   }
   function state() {
-    const configured = !!readConfig(file);
-    return { configured, ok: !!last && !error, error, checkedAt: at || null, day: configured ? last : null };
+    const cfg = readConfig(file);
+    // the board itself, to open: its address without the office's key
+    const link = cfg ? cfg.url.split('?')[0] : null;
+    return { configured: !!cfg, ok: !!last && !error, error, checkedAt: at || null, link, day: cfg ? last : null };
   }
   function start() {
     refresh();

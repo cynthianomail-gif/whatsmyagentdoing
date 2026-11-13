@@ -128,6 +128,8 @@ test('the board is looked at now and then, and a failure keeps what was seen bef
   const b = createBoard({ file, fetchImpl, now: () => clock, every: 60000 });
   const s1 = await b.get();
   assert.deepEqual([s1.configured, s1.ok, s1.error, s1.day.counts.today, s1.day.person], [true, true, '', 1, '初儀君']);
+  assert.equal(s1.link, URL.split('?')[0]);           // the board to open, without the key
+  assert.doesNotMatch(JSON.stringify(s1), /key=abc/);
   await b.get();
   assert.equal(calls, 1);                            // asked again soon after: the last look will do
   clock += 61000;
@@ -139,7 +141,7 @@ test('the board is looked at now and then, and a failure keeps what was seen bef
   const s3 = await b.refresh();
   assert.deepEqual([s3.ok, s3.error], [false, 'bad key']);
   writeConfig({ url: 'off' }, file);
-  assert.deepEqual(await b.get(), { configured: false, ok: false, error: 'bad key', checkedAt: clock, day: null });
+  assert.deepEqual(await b.get(), { configured: false, ok: false, error: 'bad key', checkedAt: clock, link: null, day: null });
 });
 
 test('/api/board gives the day, and nothing at all in private mode', async (t) => {
