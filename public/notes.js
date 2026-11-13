@@ -59,6 +59,7 @@
       this.status = '';
       this.bad = false;
       this.heardAt = 0;
+      this.pinned = null;
       try {
         this.chan = new BroadcastChannel('whatsmyagentdoing-notes');
         this.chan.onmessage = (e) => this.heard(e.data);
@@ -190,6 +191,48 @@
       return win;
     }
 
+    // Whether this page can put the notes in a window that stays on top of
+    // every other one (Document Picture-in-Picture: Chrome and Edge).
+    get canPin() {
+      return window.top === window && typeof (window.documentPictureInPicture || {}).requestWindow === 'function';
+    }
+
+    // All the notes in a small window that stays on top of everything, as a
+    // sticky note does. Asked for again, the window is put away. It holds the
+    // notes page itself (/notes?pin=1), which goes on saving while this page
+    // is in the background. The browser keeps one such window at a time.
+    async pin() {
+      if (this.pinned) {
+        const old = this.pinned;
+        this.pinned = null;
+        try { old.close(); } catch { /* it is gone already */ }
+        this.render();
+        return null;
+      }
+      this.flush();
+      let win = null;
+      try { win = await window.documentPictureInPicture.requestWindow({ width: 300, height: 420 }); } catch { /* not in this browser */ }
+      if (!win) { this.say(this.text().pinFail, true); return null; }
+      if (win.closed) return null;
+      this.pinned = win;
+      win.addEventListener('pagehide', () => {
+        if (this.pinned !== win) return;
+        this.pinned = null;
+        this.render();
+      }, { once: true });
+      const d = win.document;
+      d.title = this.text().tab;
+      const style = d.createElement('style');
+      style.textContent = 'html,body{margin:0;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}';
+      d.head.append(style);
+      const frame = d.createElement('iframe');
+      frame.title = this.text().tab;
+      frame.src = new URL('/notes?pin=1', location.href).href;
+      d.body.append(frame);
+      this.opened();
+      return win;
+    }
+
     input(e) {
       const card = e.target.closest && e.target.closest('.note[data-id]');
       const n = card && e.target.tagName === 'TEXTAREA' && this.list.find((x) => x.id === card.dataset.id);
@@ -218,6 +261,8 @@
         this.render();
       } else if (act === 'popall') {
         this.open();
+      } else if (act === 'pin') {
+        this.pin();
       } else if (!n) {
         return;
       } else if (act === 'pop') {

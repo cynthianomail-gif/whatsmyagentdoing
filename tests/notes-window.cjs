@@ -10,7 +10,7 @@ const vm = require('vm');
 const { test } = require('node:test');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'notes.js'), 'utf8');
-const TEXT = { saved: 'saved', saveFail: 'save failed', popFail: 'blocked', color: 'colour', hint: 'hint', done: 'done', del: 'delete', pop: 'pop', add: 'add', deleted: 'deleted', undo: 'undo', private: 'private', loadFail: 'load failed', full: (n) => 'full ' + n };
+const TEXT = { saved: 'saved', saveFail: 'save failed', popFail: 'blocked', color: 'colour', hint: 'hint', done: 'done', del: 'delete', pop: 'pop', tab: 'notes', pinFail: 'no pin', add: 'add', deleted: 'deleted', undo: 'undo', private: 'private', loadFail: 'load failed', full: (n) => 'full ' + n };
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
 function world(notes) {
@@ -33,8 +33,11 @@ function world(notes) {
       addEventListener: (k, f) => { (on[k] = on[k] || []).push(f); },
       open: (...a) => { opened.push(a); return win.blocked ? null : { focus() {} }; },
     };
+    win.top = win;
     const ctx = {
       window: win,
+      location: { href: 'http://localhost:4545/' },
+      URL,
       BroadcastChannel: Chan,
       document: { getElementById: () => null },
       localStorage: { getItem: (k) => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => { kept.set(k, String(v)); } },
@@ -187,6 +190,68 @@ test('a note opens in a window named after it, where that window was last left',
   assert.equal(one.book.status, 'blocked');
   assert.equal(one.book.bad, true);
   assert.equal(said.length, 4);
+});
+
+test('the notes go into a window that stays on top, and come out of it again', async () => {
+  const w = world([{ id: 'a', text: 'x', color: 0, done: false, at: 1 }]);
+  const said = [];
+  const one = w.open({ opened: (id) => { said.push(id || 'all'); } });
+  await one.book.load();
+  assert.equal(one.book.canPin, false);   // a browser without such windows
+
+  // a made-up window of that kind: what was put in it, and what it listens for
+  const pip = () => {
+    const on = {}, made = [];
+    return {
+      closed: false, on, made,
+      document: { title: '', createElement: (tag) => { const e = { tag }; made.push(e); return e; }, head: { append() {} }, body: { append(e) { e.inBody = true; } } },
+      addEventListener: (k, f) => { on[k] = f; },
+      close() { this.closed = true; },
+    };
+  };
+  const asked = [];
+  let next = pip();
+  one.win.documentPictureInPicture = { requestWindow: async (o) => { asked.push(o); if (!next) throw new Error('no window'); return next; } };
+  assert.equal(one.book.canPin, true);
+
+  one.log.rendered = 0;
+  const first = await one.book.pin();
+  assert.equal(first, next);
+  assert.deepEqual(plain(asked), [{ width: 300, height: 420 }]);
+  const frame = first.made.find((e) => e.tag === 'iframe');
+  assert.equal(frame.src, 'http://localhost:4545/notes?pin=1');
+  assert.equal(frame.inBody, true);
+  assert.equal(first.document.title, 'notes');
+  assert.equal(one.book.pinned, first);
+  assert.deepEqual(said, ['all']);
+
+  // the browser closed it: the user did, or another window of the kind took its place
+  first.on.pagehide();
+  assert.equal(one.book.pinned, null);
+  assert.equal(one.log.rendered, 1);
+
+  // asked for while it is open, it is put away
+  next = pip();
+  const second = await one.book.pin();
+  assert.equal(one.book.pinned, second);
+  assert.equal(await one.book.pin(), null);
+  assert.equal(second.closed, true);
+  assert.equal(one.book.pinned, null);
+  second.on.pagehide();                   // the window going says nothing more
+  assert.equal(one.book.pinned, null);
+
+  // a browser that has the call but no window to give
+  next = null;
+  assert.equal(await one.book.pin(), null);
+  assert.equal(one.book.status, 'no pin');
+  assert.equal(one.book.bad, true);
+  assert.equal(said.length, 2);
+
+  // and a page inside another (the office in its own floating window) never offers it
+  const inner = w.open();
+  inner.win.documentPictureInPicture = one.win.documentPictureInPicture;
+  inner.win.top = {};
+  assert.equal(inner.book.canPin, false);
 });
 
 test('the card offers the window only where it is wanted, and never trusts the text', async () => {

@@ -47,6 +47,13 @@
   body.one:not(.gone) .notes-foot .bad { color: #b3261e; }
   body.one:not(.gone) .notes-foot button { color: #2a2622; }
   body.one.gone #app { padding: 12px; }
+
+  /* pinned on top of everything (?pin=1): a small window, so less around the notes */
+  html.pin #app { padding: 8px; }
+  html.pin .notes { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  html.pin .note { min-height: 96px; }
+  html.pin .note textarea { min-height: 46px; }
+  html.pin .note .bar label { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -62,10 +69,13 @@ const esc = NoteBook.esc;
 // (An id that could not be a note's shows as a note that is gone.)
 const ASKED = new URLSearchParams(location.search).get('id');
 const ONLY = ASKED == null ? '' : /^[a-z0-9]{1,24}$/i.test(ASKED) ? ASKED : '-';
+// ?pin=1: this page is inside the window that stays on top (NoteBook.pin).
+const PIN = new URLSearchParams(location.search).has('pin');
 const app = document.getElementById('app');
 document.documentElement.lang = L.html;
+document.documentElement.classList.toggle('pin', PIN);
 
-const book = new NoteBook({ text: N, canPop: !ONLY, changed: look, render: draw });
+const book = new NoteBook({ text: N, canPop: !ONLY && !PIN, changed: look, render: draw });
 const mine = () => (ONLY ? book.list.find((x) => x.id === ONLY) : null);
 
 // The name on the window, and the colour of the paper behind one sheet.

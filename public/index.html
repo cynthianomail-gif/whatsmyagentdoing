@@ -202,7 +202,7 @@
   .report .note .dots button.on { outline: 2px solid #2a2622; outline-offset: 1px; }
   .report .note .del, .report .note .pop { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
   .report .note .del:hover, .report .note .pop:hover { opacity: 1; }
-  .report .foot .pop-all { margin-right: auto; }
+  .report .foot .pop-all { display: flex; flex-wrap: wrap; gap: 8px; margin-right: auto; }
   .report .note.add { align-items: center; justify-content: center; border: 1px dashed var(--faint); background: none; color: var(--muted); box-shadow: none; font: inherit; font-size: 13px; cursor: pointer; }
   .report .note.add:hover { color: var(--ink); border-color: var(--ink); }
   .report .notes-foot { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -943,7 +943,9 @@ function syncBoard() {
 }
 function renderNotes(focusId) {
   const back = boardBack(), R = RL(), N = NL();
-  const pop = noteBook.unseen() ? '' : `<button type="button" class="btn pop-all" data-n="popall">↗ ${esc(N.popAll)}</button>`;
+  // the notes in a window that stays on top of everything, where the browser has one
+  const pin = noteBook.canPin ? `<button type="button" class="btn" data-n="pin" aria-pressed="${!!noteBook.pinned}">📌 ${esc(noteBook.pinned ? N.unpin : N.pin)}</button>` : '';
+  const pop = noteBook.unseen() ? '' : `<span class="pop-all"><button type="button" class="btn" data-n="popall">↗ ${esc(N.popAll)}</button>${pin}</span>`;
   back.innerHTML = `<div class="report" role="dialog" aria-label="${esc(N.tab)}">
     ${boardTabs('notes')}
     ${noteBook.body()}
