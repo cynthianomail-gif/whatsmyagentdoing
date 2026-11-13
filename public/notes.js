@@ -9,6 +9,21 @@
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ESC[c]);
 
+  // Reminder times: what a datetime-local field holds, and how a time reads on a note.
+  const pad = (n) => String(n).padStart(2, '0');
+  const fieldOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const timeOf = (ms, now = Date.now()) => {
+    const d = new Date(ms), t = new Date(now);
+    const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return d.toDateString() === t.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  };
+  // Asking is only worth it once, and only where the browser has notifications.
+  function askToNotify() {
+    try {
+      if (window.Notification && window.Notification.permission === 'default') window.Notification.requestPermission();
+    } catch { /* no notifications here */ }
+  }
+
   // Where a notes window was left, so it opens there the next time.
   const PLACE = 'wmad.noteWin.';
   const between = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
@@ -60,6 +75,7 @@
       this.bad = false;
       this.heardAt = 0;
       this.pinned = null;
+      this.editing = null;   // the note whose reminder time is being set
       try {
         this.chan = new BroadcastChannel('whatsmyagentdoing-notes');
         this.chan.onmessage = (e) => this.heard(e.data);
@@ -75,6 +91,21 @@
     }
 
     get todo() { return this.list.filter((n) => !n.done); }
+    // notes whose time has come and that are not done yet
+    get alarms() { return this.list.filter((n) => n.remind && n.reminded && !n.done); }
+
+    // The notes whose reminder time has come since last asked. They are
+    // marked as reminded (and that is saved and told to the other windows),
+    // so each is handed out once, by whichever page asks first.
+    takeDue(now = Date.now()) {
+      if (this.private || !this.loaded) return [];
+      const due = this.list.filter((n) => n.remind && !n.reminded && !n.done && n.remind <= now);
+      if (!due.length) return [];
+      for (const n of due) n.reminded = true;
+      this.save();
+      this.render();
+      return due;
+    }
     colour(n) { return COLORS[n.color] || COLORS[0]; }
 
     post(message) {
@@ -147,9 +178,16 @@
       const N = this.text();
       const dots = COLORS.map((c, i) => `<button type="button" data-n="color" data-c="${i}" class="${i === n.color ? 'on' : ''}" style="background:${c}" title="${esc(N.color)}" aria-label="${esc(N.color)} ${i + 1}"></button>`).join('');
       const pop = this.canPop ? `<button type="button" class="pop" data-n="pop" title="${esc(N.pop)}" aria-label="${esc(N.pop)}">↗</button>` : '';
-      return `<div class="note${n.done ? ' done' : ''}" data-id="${esc(n.id)}" style="--paper:${this.colour(n)}">
+      // the reminder: a line of its own once there is one, or while it is being set
+      const editing = this.editing === n.id;
+      const when = editing
+        ? `<div class="when"><input type="datetime-local" data-n="remind" value="${n.remind ? fieldOf(n.remind) : ''}" aria-label="${esc(N.remind)}"><button type="button" data-n="when">${esc(N.remindOk)}</button>${n.remind ? `<button type="button" data-n="noremind">${esc(N.remindClear)}</button>` : ''}</div>`
+        : n.remind ? `<div class="when"><button type="button" data-n="when" title="${esc(N.remind)}">⏰ ${esc(timeOf(n.remind))}</button></div>` : '';
+      const clock = !n.remind && !editing ? `<button type="button" class="clock" data-n="when" title="${esc(N.remind)}" aria-label="${esc(N.remind)}">⏰</button>` : '';
+      const due = n.remind && n.reminded && !n.done ? ' due' : '';
+      return `<div class="note${n.done ? ' done' : ''}${due}" data-id="${esc(n.id)}" style="--paper:${this.colour(n)}">
       <textarea maxlength="300" placeholder="${esc(N.hint)}" aria-label="${esc(N.hint)}">${esc(n.text)}</textarea>
-      <div class="bar"><label><input type="checkbox" data-n="done"${n.done ? ' checked' : ''}>${esc(N.done)}</label><span class="dots">${dots}</span>${pop}<button type="button" class="del" data-n="del" title="${esc(N.del)}" aria-label="${esc(N.del)}">✕</button></div>
+      ${when}<div class="bar"><label><input type="checkbox" data-n="done"${n.done ? ' checked' : ''}>${esc(N.done)}</label><span class="dots">${dots}</span>${clock}${pop}<button type="button" class="del" data-n="del" title="${esc(N.del)}" aria-label="${esc(N.del)}">✕</button></div>
     </div>`;
     }
 
@@ -201,8 +239,10 @@
     // sticky note does. Asked for again, the window is put away. It holds the
     // notes page itself (/notes?pin=1), which goes on saving while this page
     // is in the background. The browser keeps one such window at a time.
-    async pin() {
+    // (quiet: when it was not a click that asked, a refusal is not news)
+    async pin(quiet) {
       if (this.pinned) {
+        if (quiet) return this.pinned;   // a reminder never puts the window away
         const old = this.pinned;
         this.pinned = null;
         try { old.close(); } catch { /* it is gone already */ }
@@ -212,7 +252,7 @@
       this.flush();
       let win = null;
       try { win = await window.documentPictureInPicture.requestWindow({ width: 300, height: 420 }); } catch { /* not in this browser */ }
-      if (!win) { this.say(this.text().pinFail, true); return null; }
+      if (!win) { if (!quiet) this.say(this.text().pinFail, true); return null; }
       if (win.closed) return null;
       this.pinned = win;
       win.addEventListener('pagehide', () => {
@@ -235,8 +275,17 @@
 
     input(e) {
       const card = e.target.closest && e.target.closest('.note[data-id]');
-      const n = card && e.target.tagName === 'TEXTAREA' && this.list.find((x) => x.id === card.dataset.id);
-      if (n) { n.text = e.target.value; this.save(); }
+      const n = card && this.list.find((x) => x.id === card.dataset.id);
+      if (!n) return;
+      if (e.target.tagName === 'TEXTAREA') { n.text = e.target.value; this.save(); return; }
+      if (e.target.dataset && e.target.dataset.n === 'remind') {
+        // a new time is a new reminder (not drawn again: the picker stays open)
+        const ms = e.target.value ? new Date(e.target.value).getTime() : NaN;
+        if (Number.isFinite(ms)) n.remind = ms; else delete n.remind;
+        delete n.reminded;
+        card.classList.remove('due');
+        this.save();
+      }
     }
 
     click(e) {
@@ -267,6 +316,19 @@
         return;
       } else if (act === 'pop') {
         this.open(n.id);
+      } else if (act === 'when') {
+        // open (or close) the line where the reminder time is set
+        this.editing = this.editing === n.id ? null : n.id;
+        if (this.editing) askToNotify();
+        this.render();
+        const field = this.editing && document.querySelector(`.note[data-id="${n.id}"] [data-n=remind]`);
+        if (field) field.focus();
+      } else if (act === 'noremind') {
+        delete n.remind;
+        delete n.reminded;
+        this.editing = null;
+        this.save();
+        this.render();
       } else if (act === 'done') {
         n.done = el.checked;
         card.classList.toggle('done', n.done);
@@ -289,5 +351,7 @@
   NoteBook.MAX = MAX;
   NoteBook.esc = esc;
   NoteBook.keepPlace = keepPlace;
+  NoteBook.timeOf = timeOf;
+  NoteBook.askToNotify = askToNotify;
   window.NoteBook = NoteBook;
 })();

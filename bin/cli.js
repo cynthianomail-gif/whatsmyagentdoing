@@ -10,6 +10,7 @@ const hook = require('../src/hook');
 const { createServer, snapshot } = require('../src/server');
 const { createReports } = require('../src/reports');
 const { createNotes } = require('../src/notes');
+const meetings = require('../src/meetings');
 const external = require('../src/external');
 const pkg = require('../package.json');
 const EXTERNAL_DIRS = external.location();
@@ -28,7 +29,9 @@ Options:
   --json            Print one snapshot as JSON and exit
   --demo            Show a made-up team instead of your sessions
   --stop            Stop a running dashboard
-  --update          Update to the latest version (git pull) and restart a running dashboard
+  --add-meetings <file>  Put the meetings in this JSON file on the notice board, each
+                    as a note that reminds you 10 minutes before (see SKILL.md)
+  --update         Update to the latest version (git pull) and restart a running dashboard
   --install-hook    Optional: add a Claude Code hook so permission prompts show "Waiting for you"
   --uninstall-hook  Remove that hook again
   -h, --help        Show this help
@@ -74,6 +77,10 @@ function parseArgs(argv) {
     else if (a === '--json') o.json = true;
     else if (a === '--demo') o.demo = true;
     else if (a === '--stop') o.stop = true;
+    else if (a === '--add-meetings') {
+      if (!argv[i + 1] || argv[i + 1].startsWith('--')) { console.error('--add-meetings requires a file'); process.exit(1); }
+      o.addMeetings = argv[++i];
+    }
     else if (a === '--update') o.update = true;
     else if (a === '--hook') o.hook = true;
     else if (a === '--install-hook') o.installHook = true;
@@ -104,6 +111,47 @@ function alreadyRunning(port) {
     req.on('error', () => resolve(false));
     req.on('timeout', () => { req.destroy(); resolve(false); });
   });
+}
+
+// The notes API of a running dashboard (src/server.js).
+function notesApi(port, method, body) {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const headers = { 'x-whatsmyagentdoing': 'notes' };
+    if (data) { headers['content-type'] = 'application/json'; headers['content-length'] = data.length; }
+    const req = http.request({ host: '127.0.0.1', port, path: '/api/notes', method, timeout: 5000, headers }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => (text += c));
+      res.on('end', () => {
+        if (res.statusCode !== 200) { reject(new Error(`the dashboard answered ${res.statusCode}`)); return; }
+        try { resolve(JSON.parse(text || '{}')); } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error('the dashboard did not answer')); });
+    req.end(data);
+  });
+}
+
+// --add-meetings: through the running dashboard when there is one (so the
+// open pages see the meetings), else straight into the notes file.
+async function addMeetings(file, port) {
+  const list = meetings.readMeetings(require('fs').readFileSync(file, 'utf8'));
+  let running = 0;
+  for (let p = port; p <= port + 10 && !running; p++) if (await alreadyRunning(p)) running = p;
+  if (running) {
+    const now = await notesApi(running, 'GET');
+    if (now.private) throw new Error('the dashboard runs with --private, which shows no notes and takes none');
+    const r = meetings.mergeMeetings(now.notes, list);
+    if (r.added || r.updated || r.removed) await notesApi(running, 'PUT', { notes: r.notes });
+    console.log(`${meetings.summary(r)} (on the board at http://localhost:${running})`);
+  } else {
+    const store = createNotes();
+    const r = meetings.mergeMeetings(store.list(), list);
+    if (r.added || r.updated || r.removed) store.set(r.notes);
+    console.log(`${meetings.summary(r)} (the dashboard is not running; they show when it starts)`);
+  }
 }
 
 function stopAt(port) {
@@ -161,6 +209,12 @@ async function main() {
       console.error(String(e.message || e));
       process.exit(1);
     }
+    return;
+  }
+
+  if (o.addMeetings) {
+    try { await addMeetings(o.addMeetings, o.port); }
+    catch (e) { console.error(`Could not add the meetings: ${e.message}`); process.exitCode = 1; }
     return;
   }
 

@@ -1,6 +1,6 @@
 ---
 name: myoffice
-description: Open a live office view of every Claude Code, Codex, Gemini CLI, Antigravity CLI, Copilot CLI, OMP, Pi, Kimi Code, DeepSeek Harness, Grok Build, OpenCode and Hermes agent on this machine — who is thinking, running a tool, writing a reply, waiting for the user, or done. Use when the user types /myoffice, asks what their agents are doing, wants to see all running sessions, or which agent is stuck or finished ("我的 agent 在幹嘛", "show my agents").
+description: Open a live office view of every Claude Code, Codex, Gemini CLI, Antigravity CLI, Copilot CLI, OMP, Pi, Kimi Code, DeepSeek Harness, Grok Build, OpenCode and Hermes agent on this machine — who is thinking, running a tool, writing a reply, waiting for the user, or done. Use when the user types /myoffice, asks what their agents are doing, wants to see all running sessions, or which agent is stuck or finished ("我的 agent 在幹嘛", "show my agents"). Also use when the user wants today's Teams / Outlook meetings put on the office's notice board as reminder notes ("抓今天的會議", "把會議貼到便條", "put my meetings on the board").
 ---
 
 # myoffice
@@ -42,6 +42,30 @@ Options the user may ask for:
 - `--json` — print a one-off snapshot instead of opening a page. Use this when
   the user asks in chat what their other agents are doing: run
   `node "<base directory>/bin/cli.js" --json --hours 2` and summarize by status.
+
+## Today's meetings as notes
+
+When the user asks for today's meetings on the board ("抓今天的會議"), the
+office can't read Teams itself; you read them and hand them over:
+
+1. Read today's events with the Microsoft 365 connector's calendar search
+   (`outlook_calendar_search`: query `*`, from today 00:00 to tomorrow 00:00,
+   order oldest, limit 25; fetch the next page while it gives `nextOffset`).
+   No such connector, or it fails twice: say so and stop. Never ask for a password.
+2. Write what it returned to a JSON file in your scratchpad, one entry per
+   event, copying the fields as given (don't invent any):
+   `{"meetings":[{"id":"…","subject":"…","start":{"dateTime":"…","timeZone":"…"},"end":{…},"location":"…","isAllDay":false,"isCancelled":false}]}`
+3. Run (not in the background): `node "<base directory>/bin/cli.js" --add-meetings "<that file>"`
+   and tell the user the line it printed.
+
+Each meeting becomes a blue note (`📅 10:00–11:00 subject`) that reminds them
+10 minutes before it starts: a notification, and a line at the top of the
+office with "📌 Keep on top". Handing the same day over again updates the
+notes instead of adding more; cancelled meetings come off the board; meetings
+already over, and all-day ones, are left out. The board holds 12 notes.
+Reminders only fire while the office is open in a browser tab (it is never
+started automatically), and the first reminder the user sets asks the browser
+for permission to show notifications.
 
 If the user wants Claude Code permission prompts to show as "Waiting for you"
 (Claude Code doesn't log them), offer `node "<base directory>/bin/cli.js" --install-hook`.

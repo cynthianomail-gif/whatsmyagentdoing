@@ -10,7 +10,7 @@ const vm = require('vm');
 const { test } = require('node:test');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'notes.js'), 'utf8');
-const TEXT = { saved: 'saved', saveFail: 'save failed', popFail: 'blocked', color: 'colour', hint: 'hint', done: 'done', del: 'delete', pop: 'pop', tab: 'notes', pinFail: 'no pin', add: 'add', deleted: 'deleted', undo: 'undo', private: 'private', loadFail: 'load failed', full: (n) => 'full ' + n };
+const TEXT = { saved: 'saved', saveFail: 'save failed', popFail: 'blocked', color: 'colour', hint: 'hint', done: 'done', del: 'delete', pop: 'pop', tab: 'notes', pinFail: 'no pin', remind: 'remind', remindOk: 'ok', remindClear: 'clear', add: 'add', deleted: 'deleted', undo: 'undo', private: 'private', loadFail: 'load failed', full: (n) => 'full ' + n };
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
 function world(notes) {
@@ -39,7 +39,7 @@ function world(notes) {
       location: { href: 'http://localhost:4545/' },
       URL,
       BroadcastChannel: Chan,
-      document: { getElementById: () => null },
+      document: { getElementById: () => null, querySelector: () => null },
       localStorage: { getItem: (k) => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => { kept.set(k, String(v)); } },
       setTimeout, clearTimeout, setInterval, encodeURIComponent,
       fetch: async (url, init) => {
@@ -252,6 +252,99 @@ test('the notes go into a window that stays on top, and come out of it again', a
   inner.win.documentPictureInPicture = one.win.documentPictureInPicture;
   inner.win.top = {};
   assert.equal(inner.book.canPin, false);
+});
+
+// A click or a keystroke on a note, as the page hands it to the NoteBook.
+function on(book, id, act, extra = {}) {
+  const classes = new Set();
+  const card = { dataset: { id }, classList: { remove: (c) => classes.delete(c), toggle() {} }, style: { setProperty() {} }, querySelectorAll: () => [] };
+  const el = { dataset: { n: act }, closest: (sel) => (sel === '[data-n]' ? el : sel.startsWith('.note') ? card : null), ...extra };
+  return { target: el };
+}
+
+test('a note is given a time to remind, and the time is taken off again', async () => {
+  const w = world([{ id: 'a', text: 'call the studio', color: 0, done: false, at: 1 }]);
+  const one = w.open(), two = w.open();
+  await one.book.load();
+  await two.book.load();
+
+  // no reminder yet: a clock on the bar; asking for it opens the line with the time
+  assert.match(one.book.card(one.book.list[0]), /class="clock" data-n="when"/);
+  assert.doesNotMatch(one.book.card(one.book.list[0]), /data-n="remind"/);
+  one.book.click(on(one.book, 'a', 'when'));
+  assert.equal(one.book.editing, 'a');
+  assert.match(one.book.card(one.book.list[0]), /type="datetime-local" data-n="remind" value=""/);
+  assert.doesNotMatch(one.book.card(one.book.list[0]), /data-n="noremind"/);
+
+  // a time is picked: kept, told to the other window, saved
+  one.book.input(on(one.book, 'a', 'remind', { tagName: 'INPUT', value: '2026-11-13T14:30' }));
+  const ms = new Date(2026, 10, 13, 14, 30).getTime();
+  assert.equal(one.book.list[0].remind, ms);
+  assert.equal(two.book.list[0].remind, ms);
+  assert.match(one.book.card(one.book.list[0]), /value="2026-11-13T14:30"/);
+  await one.book.flush();
+  assert.equal(w.server.notes[0].remind, ms);
+
+  // the line closes and shows the time; no clock on the bar any more
+  one.book.click(on(one.book, 'a', 'when'));
+  assert.equal(one.book.editing, null);
+  const card = one.book.card(one.book.list[0]);
+  assert.match(card, /data-n="when" title="remind">⏰ (14:30|11\/13 14:30)</);
+  assert.doesNotMatch(card, /class="clock"/);
+
+  // a time that went off and is given again is a new reminder
+  one.book.list[0].reminded = true;
+  one.book.input(on(one.book, 'a', 'remind', { tagName: 'INPUT', value: '2026-11-13T16:00' }));
+  assert.equal(one.book.list[0].reminded, undefined);
+  // and cleared, there is none
+  one.book.click(on(one.book, 'a', 'noremind'));
+  assert.equal(one.book.list[0].remind, undefined);
+  assert.equal(two.book.list[0].remind, undefined);
+  assert.equal(one.book.editing, null);
+});
+
+test('a note whose time has come is handed out once, and shows until it is done', async () => {
+  const t0 = new Date(2026, 10, 13, 9, 0).getTime();
+  const w = world([
+    { id: 'a', text: 'early', color: 0, done: false, at: 1, remind: t0 - 60e3 },
+    { id: 'b', text: 'later', color: 0, done: false, at: 2, remind: t0 + 3600e3 },
+    { id: 'c', text: 'done anyway', color: 0, done: true, at: 3, remind: t0 - 60e3 },
+    { id: 'd', text: 'no time', color: 0, done: false, at: 4 },
+  ]);
+  const office = w.open(), pinned = w.open();
+  assert.equal(office.book.takeDue(t0).length, 0);    // nothing read yet: nothing to say
+  await office.book.load();
+  await pinned.book.load();
+
+  const due = office.book.takeDue(t0);
+  assert.deepEqual(plain(due).map((n) => n.id), ['a']);
+  assert.equal(pinned.book.list[0].reminded, true);   // the other window knows, and will not say it again
+  assert.equal(pinned.book.takeDue(t0).length, 0);
+  assert.equal(office.book.takeDue(t0 + 1000).length, 0);
+  assert.match(office.book.card(office.book.list[0]), /class="note due"/);
+  assert.deepEqual(plain(office.book.alarms).map((n) => n.id), ['a']);
+  await office.book.flush();
+  assert.equal(w.server.notes[0].reminded, true);
+
+  assert.deepEqual(plain(office.book.takeDue(t0 + 3600e3)).map((n) => n.id), ['b']);
+  office.book.list[0].done = true;
+  assert.deepEqual(plain(office.book.alarms).map((n) => n.id), ['b']);
+  assert.doesNotMatch(office.book.card(office.book.list[0]), /due/);
+  await office.book.flush();
+});
+
+test('a reminder that asks for the window on top never puts it away', async () => {
+  const w = world([]);
+  const one = w.open();
+  const kept = { closed: false, close() { this.closed = true; } };
+  one.book.pinned = kept;
+  assert.equal(await one.book.pin(true), kept);
+  assert.equal(kept.closed, false);
+  // and a refusal it did not click for is not news
+  one.book.pinned = null;
+  one.win.documentPictureInPicture = { requestWindow: async () => { throw new Error('needs a click'); } };
+  assert.equal(await one.book.pin(true), null);
+  assert.equal(one.book.status, '');
 });
 
 test('the card offers the window only where it is wanted, and never trusts the text', async () => {

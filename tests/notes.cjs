@@ -45,6 +45,24 @@ test('odd input is tidied, never trusted', () => {
   assert.deepEqual(n.set({ notes: [] }), []);
 });
 
+test('a reminder and where a note came from are kept, and nothing odd about them', () => {
+  const now = Date.UTC(2026, 10, 13, 1, 0);
+  const n = createNotes({ file: null, now: () => now });
+  const got = n.set([
+    { id: 'r1', text: 'call', remind: now + 3600e3, reminded: true, src: 'teams:0123456789abcdef' },
+    { id: 'r2', text: 'plain' },
+    { id: 'r3', remind: now + 60e3, reminded: 'yes', src: 'teams:../../x' },
+    { id: 'r4', remind: -5, reminded: true, src: 'x'.repeat(80) },
+    { id: 'r5', remind: now + 5 * 365 * 24 * 3600e3 },
+    { id: 'r6', remind: '1700000000000' },
+    { id: 'r7', reminded: true },
+  ]);
+  assert.deepEqual(got[0], { id: 'r1', text: 'call', color: 0, done: false, at: now, remind: now + 3600e3, reminded: true, src: 'teams:0123456789abcdef' });
+  assert.deepEqual(Object.keys(got[1]), ['id', 'text', 'color', 'done', 'at']);   // a note without one looks as it always did
+  assert.deepEqual([got[2].remind, got[2].reminded, got[2].src], [now + 60e3, undefined, undefined]);
+  for (const k of [3, 4, 5, 6]) assert.deepEqual([got[k].remind, got[k].reminded, got[k].src], [undefined, undefined, undefined], 'note ' + got[k].id);
+});
+
 test('a file that is not notes starts an empty board', () => {
   const file = tmp();
   fs.mkdirSync(path.dirname(file), { recursive: true });

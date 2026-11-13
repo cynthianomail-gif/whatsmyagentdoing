@@ -200,8 +200,19 @@
   .report .note .dots { display: flex; gap: 4px; margin-left: auto; }
   .report .note .dots button { width: 13px; height: 13px; padding: 0; border: 1px solid rgba(42,38,34,.35); border-radius: 50%; cursor: pointer; }
   .report .note .dots button.on { outline: 2px solid #2a2622; outline-offset: 1px; }
-  .report .note .del, .report .note .pop { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
-  .report .note .del:hover, .report .note .pop:hover { opacity: 1; }
+  .report .note .del, .report .note .pop, .report .note .clock { padding: 0 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; opacity: .55; cursor: pointer; }
+  .report .note .del:hover, .report .note .pop:hover, .report .note .clock:hover { opacity: 1; }
+  .report .note .when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; }
+  .report .note .when button { padding: 1px 6px; border: 1px solid rgba(42,38,34,.3); border-radius: 10px; background: rgba(255,255,255,.35); color: #2a2622; font: inherit; cursor: pointer; }
+  .report .note .when input { min-width: 0; padding: 1px 4px; border: 1px solid rgba(42,38,34,.35); border-radius: 4px; background: rgba(255,255,255,.6); color: #2a2622; font: inherit; color-scheme: light; }
+  .report .note.due { animation: note-due 1.2s ease-in-out infinite alternate; }
+  .report .note.due .when button { border-color: #b3261e; color: #b3261e; font-weight: 600; }
+  @keyframes note-due { from { box-shadow: 0 0 0 2px #e5484d, 0 2px 6px rgba(0,0,0,.16); } to { box-shadow: 0 0 0 4px rgba(229,72,77,.35), 0 2px 6px rgba(0,0,0,.16); } }
+  /* a reminder whose time has come, at the top of the office */
+  #noteAlarm { position: fixed; top: 56px; left: 50%; z-index: 90; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 10px; background: #fff4c2; color: #2a2622; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 14px; }
+  #noteAlarm .what { font-weight: 600; white-space: pre-line; }
+  #noteAlarm button { padding: 4px 10px; border: 1px solid rgba(42,38,34,.3); border-radius: 6px; background: #fff; color: #2a2622; font: inherit; font-size: 13px; cursor: pointer; }
+  #noteAlarm button.main { background: #2a2622; color: #fff4c2; border-color: #2a2622; }
   .report .foot .pop-all { display: flex; flex-wrap: wrap; gap: 8px; margin-right: auto; }
   .report .note.add { align-items: center; justify-content: center; border: 1px dashed var(--faint); background: none; color: var(--muted); box-shadow: none; font: inherit; font-size: 13px; cursor: pointer; }
   .report .note.add:hover { color: var(--ink); border-color: var(--ink); }
@@ -936,7 +947,7 @@ function syncBoard() {
   if (typeof office === 'undefined' || !office) return;
   const R = L.rep || I18N.en.rep;
   const todo = noteBook.todo;
-  office.boardLabel = '📋 ' + (R.board || I18N.en.rep.board) + (todo.length ? '　📝 ' + todo.length : '');
+  office.boardLabel = '📋 ' + (R.board || I18N.en.rep.board) + (todo.length ? '　📝 ' + todo.length : '') + (noteBook.alarms.length ? '　⏰' : '');
   office.boardNotes = noteBook.loaded
     ? todo.concat(noteBook.list.filter((n) => n.done)).map((n) => ({ color: noteBook.colour(n), done: !!n.done }))
     : null;
@@ -962,6 +973,8 @@ async function openNotes() {
   await noteBook.load();
   if (seq !== reportSeq) return;
   renderNotes();
+  // notes with reminders (meetings put up from outside, say) need the browser's leave to notify
+  if (noteBook.list.some((n) => n.remind && !n.done)) NoteBook.askToNotify();
 }
 
 // Once a day, after REPORT_AT, say that the report is ready.
@@ -1751,7 +1764,75 @@ setInterval(tickTimes, 1000);
 setInterval(reportClock, 30 * 1000);
 setTimeout(reportClock, 6000);
 if (REPORT_PREVIEW) setTimeout(openReport, 2500);
-noteBook.load();
+noteBook.load().then(() => noteClock(true));
+
+// ---- reminders on the notes
+// The office page (not the floating office, not a notes window) watches the
+// clock. When a note's time comes it says so twice: a notification from the
+// browser, which shows over every other app, and a line at the top of the
+// office. A browser will not open the window that stays on top by itself:
+// the line has the button for it, and clicking the notification tries too.
+// which line is up, read off the page itself ('' when none)
+const alarmShown = () => { const bar = document.getElementById('noteAlarm'); return bar ? bar.dataset.kind : ''; };
+function noteAlarm(kind, notes) {
+  let bar = document.getElementById('noteAlarm');
+  if (!notes.length) { if (bar) bar.remove(); return; }
+  const N = NL();
+  const line = (n) => String(n.text || '').split('\n')[0].trim().slice(0, 60) || '…';
+  const what = kind === 'meetings' ? N.meetings(notes.length)
+    : `${N.alarm}：${line(notes[0])}${notes.length > 1 ? `（${N.alarmMore(notes.length - 1)}）` : ''}`;
+  if (!bar) { bar = document.createElement('div'); bar.id = 'noteAlarm'; bar.setAttribute('role', 'alert'); document.body.append(bar); }
+  const pin = noteBook.canPin && !noteBook.pinned ? `<button type="button" class="main" data-a="pin">${esc(N.pinNow)}</button>` : '';
+  bar.innerHTML = `<span class="what">${esc(what)}</span>${pin}<button type="button" data-a="open">${esc(N.openNotes)}</button><button type="button" data-a="close">${esc(N.dismiss)}</button>`;
+  bar.onclick = (e) => {
+    const a = e.target.closest('[data-a]');
+    if (!a) return;
+    NoteBook.askToNotify();   // a click: the one time a browser lets a page ask
+    if (a.dataset.a === 'pin') noteBook.pin(true);
+    else if (a.dataset.a === 'open') openNotes();
+    bar.remove();
+  };
+  bar.dataset.kind = kind;
+}
+function notifyNotes(notes) {
+  try {
+    if (!window.Notification || Notification.permission !== 'granted') return;
+    const N = NL();
+    const body = notes.slice(0, 4).map((n) => String(n.text || '').split('\n')[0].trim()).join('\n');
+    const ping = new Notification(N.alarm, { body, tag: 'wmad-notes', renotify: true, requireInteraction: true });
+    ping.onclick = () => {
+      window.focus();
+      ping.close();
+      noteBook.pin(true);   // the click may let it open; if not, the line at the top has the button
+    };
+  } catch { /* the line at the top still says it */ }
+}
+let meetingsSeen = null;
+function noteClock(first) {
+  if (PIP) return;
+  const due = noteBook.takeDue(Date.now());
+  if (due.length) { notifyNotes(due); noteAlarm('due', due); }
+  // meetings put on the board for today (by --add-meetings): one click away from on top
+  const today = new Date().toDateString();
+  const meetings = noteBook.list.filter((n) => n.src && !n.done && n.remind && new Date(n.remind).toDateString() === today && !n.reminded);
+  const seen = new Set(meetings.map((n) => n.src));
+  const fresh = meetingsSeen ? meetings.filter((n) => !meetingsSeen.has(n.src)) : first ? meetings : [];
+  if (noteBook.loaded) meetingsSeen = seen;
+  if (fresh.length && !due.length && alarmShown() !== 'due' && !noteBook.pinned) noteAlarm('meetings', meetings);
+}
+if (!PIP) {
+  setInterval(noteClock, 15 * 1000);
+  // what was put on the board from outside this browser (the meetings) shows within a minute
+  // (and the notes windows, the one on top among them, are told)
+  setInterval(() => {
+    noteBook.load().then((differs) => {
+      if (!differs) return;
+      noteBook.post({ notes: noteBook.list });
+      noteBook.render();
+      noteClock();
+    });
+  }, 60 * 1000);
+}
 </script>
 </body>
 </html>

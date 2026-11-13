@@ -16,6 +16,10 @@ const MAX_NOTES = 12;
 const MAX_TEXT = 300;
 const COLORS = 4;       // the page has this many paper colours
 const ID = /^[a-z0-9]{1,24}$/i;
+// where a note came from, when not from the user's own hand (teams:<hash> for a meeting)
+const SRC = /^[a-z]{1,12}:[a-z0-9]{1,40}$/i;
+// a reminder further off than this is not a reminder anyone set
+const FAR = 400 * 24 * 3600 * 1000;
 
 const newId = () => Math.random().toString(36).slice(2, 10) || 'n';
 
@@ -37,7 +41,14 @@ function clean(list, now = Date.now()) {
       .slice(0, MAX_TEXT);
     const color = Number.isInteger(n.color) && n.color >= 0 && n.color < COLORS ? n.color : 0;
     const at = Number.isFinite(n.at) && n.at > 0 ? Math.floor(n.at) : now;
-    out.push({ id, text, color, done: n.done === true, at });
+    const note = { id, text, color, done: n.done === true, at };
+    // when to remind the user of it (ms), and whether that has been done
+    if (Number.isFinite(n.remind) && n.remind > 0 && n.remind < now + FAR) {
+      note.remind = Math.floor(n.remind);
+      if (n.reminded === true) note.reminded = true;
+    }
+    if (typeof n.src === 'string' && SRC.test(n.src)) note.src = n.src;
+    out.push(note);
   }
   return out;
 }
@@ -68,4 +79,4 @@ function createNotes({ file = FILE, now = Date.now } = {}) {
   return { list, set };
 }
 
-module.exports = { createNotes, clean, MAX_NOTES, MAX_TEXT };
+module.exports = { createNotes, clean, FILE, MAX_NOTES, MAX_TEXT };
