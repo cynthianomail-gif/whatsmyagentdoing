@@ -183,6 +183,18 @@
   .report .row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .report .head { margin: 14px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
   .report .bye { margin-top: 14px; font-size: 13px; }
+  /* what the team's planning board has due (src/board.js) */
+  .report .plan { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .report .plan .ptitle { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; }
+  .report .plan .ptitle small { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--muted); }
+  .report .plan .head { margin: 10px 0 2px; }
+  .report .plan .row { padding: 5px 0; }
+  .report .plan .row .d { flex: none; width: 3.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .report .plan .row .who { color: var(--muted); font-size: 12px; }
+  .report .plan .row.over .d { color: #e5484d; }
+  .report .plan details { margin-top: 10px; }
+  .report .plan summary { font-size: 12px; font-weight: 600; color: #e5484d; cursor: pointer; }
+  .report .plan .sub { margin: 8px 0 0; }
   .report .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .report .tabs { display: flex; gap: 6px; margin: -4px 0 12px; border-bottom: 1px solid var(--line); }
   .report .tabs button { padding: 6px 10px 8px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -815,7 +827,7 @@ const reportDate = (day, opts) => {
 function reportText(d) {
   const R = RL();
   const out = [`${L.title} ${R.title} ${d.day}`];
-  if (!d.cats) return out.concat(R.noneDay || R.none).join('\n');
+  if (!d.cats) return out.concat(R.noneDay || R.none, planText(d.plan)).join('\n');
   out.push(`${d.turns} ${L.turnsL}・${fmtTokens(d.tokens)} ${L.tokensL}・${R.cats} ${d.cats}・${R.done} ${d.done}`);
   if (d.busiest) out.push(`${R.mvp}：${reportWho(d.busiest)}（${fmtTokens(d.busiest.today.tokens || 0)} ${L.tokensL}）`);
   if (d.chatty) out.push(`${R.chatty}：${reportWho(d.chatty)}（${d.chatty.today.turns || 0} ${L.turnsL}）`);
@@ -823,7 +835,36 @@ function reportText(d) {
   if (d.stuck) out.push(`${R.stuck}：${reportWho(d.stuck)}（${L.stuck(d.stuck.stuck)}）`);
   out.push(`${R.projects}：`);
   for (const [p, v] of d.projects) out.push(`- ${p}：${v.turns} ${L.turnsL}・${fmtTokens(v.tokens)}`);
-  return out.join('\n');
+  return out.concat(planText(d.plan)).join('\n');
+}
+
+// ---- the team's planning board on today's report (src/board.js)
+const PL = () => RL().plan || I18N.en.rep.plan;
+const planDate = (d) => { const [, m, day] = String(d).split('-').map(Number); return m && day ? `${m}/${day}` : String(d); };
+const planLine = (it) => `${it.game}・${it.what}`;
+function planText(plan) {
+  if (!plan || !plan.configured || !plan.day) return [];
+  const P = PL(), x = plan.day, out = ['', `${P.title}（${x.person || P.all}）：`];
+  for (const [k, label] of [['today', P.today], ['week', P.week], ['over', P.over]]) {
+    if (!x.counts[k]) continue;
+    out.push(`${label} ${x.counts[k]}：`);
+    for (const it of x.items[k]) out.push(`- ${planDate(it.due)} ${planLine(it)}（${it.plat}）`);
+  }
+  if (!x.counts.today && !x.counts.week && !x.counts.over) out.push(P.none);
+  return out;
+}
+function planHtml(plan) {
+  if (!plan || !plan.configured) return '';
+  const P = PL(), x = plan.day;
+  const rows = (list, cls) => list.map((it) => `<div class="row${cls ? ' ' + cls : ''}"><span class="d">${esc(planDate(it.due))}</span><span>${esc(planLine(it))}${it.owners && it.owners.length ? ` <span class="who">${esc(it.owners.join('、'))}</span>` : ''}</span><span class="n">${esc(it.plat)}</span></div>`).join('');
+  const more = (k) => (x.counts[k] > x.items[k].length ? `<div class="sub">${esc(P.more(x.counts[k] - x.items[k].length))}</div>` : '');
+  const head = `<div class="ptitle">📅 ${esc(P.title)}<small>${esc(x ? `${x.person || P.all}・${P.at(x.generatedAt.slice(5).replace('-', '/'))}` : '')}</small></div>`;
+  if (!x) return `<div class="plan">${head}<div class="sub">${esc(P.fail)}${esc(plan.error || '')}</div></div>`;
+  const stale = plan.error ? `<div class="sub">${esc(P.fail)}${esc(plan.error)}</div>` : '';
+  const group = (k, label, cls) => (x.counts[k] ? `<div class="head">${esc(label)}（${x.counts[k]}）</div>${rows(x.items[k], cls)}${more(k)}` : '');
+  const none = !x.counts.today && !x.counts.week ? `<div class="sub">${esc(P.none)}</div>` : '';
+  const over = x.counts.over ? `<details><summary>⚠ ${esc(P.over)}（${x.counts.over}）</summary>${rows(x.items.over, 'over')}${more('over')}</details>` : '';
+  return `<div class="plan">${head}${stale}${group('today', P.today)}${group('week', P.week)}${none}${over}</div>`;
 }
 // The card the board opens: the report on one tab, the notes on the other.
 function boardBack() {
@@ -870,6 +911,8 @@ async function openReport(day) {
   store.set('boardTab', 'report');
   reportNew = false;
   if (office) office.boardNew = false;
+  // what the planning board has due: asked at once, shown on today's report only
+  const planAsk = fetch('/api/board').then((r) => r.json()).catch(() => null);
   let today = (state.data.summary || {}).day || '', days = [], rec = null;
   try {
     const list = await fetch('/api/reports').then((r) => r.json());
@@ -881,7 +924,10 @@ async function openReport(day) {
   if (seq !== reportSeq) return;   // another day was asked for meanwhile
   const want = day || today;
   if (!rec) rec = want === today ? liveRecord() : { day: want, sessions: [] };
+  const plan = want === today ? await planAsk : null;
+  if (seq !== reportSeq) return;
   const R = RL(), d = reportData(rec);
+  d.plan = plan;
   reportNow = d;
   // today is always there to come back to, with the numbers on the card
   days = days.filter((x) => x.day !== today).concat({ day: today, turns: want === today ? d.turns : (days.find((x) => x.day === today) || {}).turns || 0, tokens: want === today ? d.tokens : (days.find((x) => x.day === today) || {}).tokens || 0 });
@@ -900,6 +946,7 @@ async function openReport(day) {
     <div class="nav">${step(days[idx - 1], 'prev', R.prev || '', '◀')}<b>${esc(reportDate(want, { month: 'numeric', day: 'numeric', weekday: 'short' }))}</b>${want === today ? `<span class="tag">${esc(R.today || '')}</span>` : ''}<span class="sp"></span>${step(days[idx + 1], 'next', R.next || '', '▶')}</div>
     <div class="days">${strip.map((x) => `<button type="button" data-day="${esc(x.day)}" class="${x.day === want ? 'on' : ''}" title="${esc(x.day)}・${x.turns || 0} ${esc(L.turnsL)}・${fmtTokens(x.tokens || 0)}"><span class="bar"><i style="height:${Math.round((100 * (x.tokens || 0)) / peak)}%"></i></span><b>${esc(reportDate(x.day, { day: 'numeric' }).replace(/[^0-9]/g, '') || x.day.slice(-2))}</b><small>${esc(x.day === today ? (R.today || '') : reportDate(x.day, { weekday: 'short' }))}</small></button>`).join('')}</div>
     <div class="span">${strip.length > 1 ? `${esc(R.span ? R.span(strip.length) : '')}　${sum.turns} ${esc(L.turnsL)}・${fmtTokens(sum.tokens)} ${esc(L.tokensL)}` : ''}</div>
+    ${planHtml(plan)}
     ${!d.cats ? `<div class="sub">${esc(want === today ? R.none : (R.noneDay || R.none))}</div>` : `
     <div class="big">
       <div><b>${d.turns}</b><span>${esc(L.turnsL)}</span></div>

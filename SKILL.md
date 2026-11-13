@@ -67,6 +67,20 @@ Reminders only fire while the office is open in a browser tab (it is never
 started automatically), and the first reminder the user sets asks the browser
 for permission to show notifications.
 
+## The planning board on the daily report
+
+Today's report can show what the team's planning board (企劃時程統籌看板, a
+Google Apps Script page) has due today and this week, and what is overdue
+(folded away). The board's own doGet has a small addition that gives its data
+at `<board address>/exec?format=office&key=<key>`; the office looks at it every
+30 minutes and applies the board's own rules (what counts as done, whose an
+item is). Set it once, and whose items to show:
+
+`node "<base directory>/bin/cli.js" --board "<that address>" --board-person "<name>"`
+
+`--board-person ""` shows everyone's; `--board off` stops it. The address is
+kept in `~/.whatsmyagentdoing/board.json`. With `--private` the board is not shown.
+
 If the user wants Claude Code permission prompts to show as "Waiting for you"
 (Claude Code doesn't log them), offer `node "<base directory>/bin/cli.js" --install-hook`.
 It adds one Notification hook to their Claude Code settings; `--uninstall-hook` removes it.

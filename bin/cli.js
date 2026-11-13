@@ -11,6 +11,7 @@ const { createServer, snapshot } = require('../src/server');
 const { createReports } = require('../src/reports');
 const { createNotes } = require('../src/notes');
 const meetings = require('../src/meetings');
+const boardFeed = require('../src/board');
 const external = require('../src/external');
 const pkg = require('../package.json');
 const EXTERNAL_DIRS = external.location();
@@ -31,6 +32,9 @@ Options:
   --stop            Stop a running dashboard
   --add-meetings <file>  Put the meetings in this JSON file on the notice board, each
                     as a note that reminds you 10 minutes before (see SKILL.md)
+  --board <url>     Show what the team's planning board has due today in the daily
+                    report (its address ending in ?format=office&key=…; "off" to stop)
+  --board-person <name>  Only that person's items from the board ("" for everyone)
   --update         Update to the latest version (git pull) and restart a running dashboard
   --install-hook    Optional: add a Claude Code hook so permission prompts show "Waiting for you"
   --uninstall-hook  Remove that hook again
@@ -80,6 +84,10 @@ function parseArgs(argv) {
     else if (a === '--add-meetings') {
       if (!argv[i + 1] || argv[i + 1].startsWith('--')) { console.error('--add-meetings requires a file'); process.exit(1); }
       o.addMeetings = argv[++i];
+    }
+    else if (a === '--board' || a === '--board-person') {
+      if (argv[i + 1] == null || (argv[i + 1].startsWith('--') && argv[i + 1] !== '')) { console.error(`${a} requires a value`); process.exit(1); }
+      o[a === '--board' ? 'boardUrl' : 'boardPerson'] = argv[++i];
     }
     else if (a === '--update') o.update = true;
     else if (a === '--hook') o.hook = true;
@@ -164,6 +172,28 @@ function stopAt(port) {
   });
 }
 
+// --board / --board-person: keep where the planning board is and whose items
+// to show, then have a running dashboard look at it at once and say what it saw.
+async function setBoard(url, person, port) {
+  const cfg = boardFeed.writeConfig({ url: url == null ? undefined : url, person });
+  if (!cfg) { console.log('The board is no longer shown in the daily report.'); return; }
+  const who = cfg.person ? `${cfg.person}'s items` : "everyone's items";
+  let running = 0;
+  for (let p = port; p <= port + 10 && !running; p++) if (await alreadyRunning(p)) running = p;
+  if (!running) { console.log(`Board saved (${who}). The daily report shows it once the dashboard starts.`); return; }
+  const s = await new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: running, path: '/api/board?refresh=1', timeout: 40000 }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => (text += c));
+      res.on('end', () => { try { resolve(JSON.parse(text)); } catch (e) { reject(e); } });
+    }).on('error', reject).on('timeout', function () { this.destroy(new Error('the dashboard did not answer')); });
+  });
+  if (!s.ok || !s.day) throw new Error(s.private ? 'the dashboard runs with --private, which shows no board' : `saved, but the board could not be read: ${s.error || 'no answer'}`);
+  const c = s.day.counts;
+  console.log(`Board saved (${who}). It has ${c.today} due today, ${c.week} more this week and ${c.over} overdue (board data of ${s.day.generatedAt}).`);
+}
+
 // Agents read this line (see SKILL.md) and offer the update.
 async function printUpdateHint() {
   await updater.checkLatest(true);
@@ -218,6 +248,12 @@ async function main() {
     return;
   }
 
+  if (o.boardUrl != null || o.boardPerson != null) {
+    try { await setBoard(o.boardUrl, o.boardPerson, o.port); }
+    catch (e) { console.error(`Could not set the board: ${e.message}`); process.exitCode = 1; }
+    return;
+  }
+
   if (o.stop) {
     // It may have moved to a later port if the default was taken.
     const ports = [];
@@ -260,6 +296,8 @@ async function main() {
     reports: o.demo ? null : createReports(),
     // the notes on the notice board; a demo's are forgotten when it stops
     notes: createNotes(o.demo ? { file: null } : undefined),
+    // the team's planning board, for the daily report (only read, never written)
+    board: boardFeed.createBoard().start(),
     onShutdown: () => { watcher.stop(); server.close(); process.exit(0); },
     // after an update from the page: start the new code on the same port
     onRestart: () => {

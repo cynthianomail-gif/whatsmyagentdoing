@@ -127,7 +127,7 @@ function snapshot(watcher, opts) {
   return { now, lang: opts.demo ? null : promptLanguage(raw), sessions, summary: summary(sessions, now) };
 }
 
-function createServer(watcher, opts, { onShutdown, onRestart, reports, notes } = {}) {
+function createServer(watcher, opts, { onShutdown, onRestart, reports, notes, board } = {}) {
   const clients = new Set();
   let last = '';
 
@@ -216,6 +216,15 @@ function createServer(watcher, opts, { onShutdown, onRestart, reports, notes } =
       const report = reports && REPORT_DAY.test(day) ? reports.get(day, { privacy: opts.privacy }) : null;
       res.writeHead(report ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(report || { day, sessions: [] }));
+    } else if (url.pathname === '/api/board' && req.method === 'GET') {
+      // what the team's planning board has due today and this week (src/board.js)
+      const send = (body) => {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(body));
+      };
+      if (opts.privacy) send({ configured: false, private: true });
+      else if (!board) send({ configured: false });
+      else (url.searchParams.get('refresh') === '1' ? board.refresh() : board.get()).then(send, (e) => send({ configured: true, ok: false, error: String(e.message || e) }));
     } else if (url.pathname === '/api/notes' && req.method === 'GET') {
       // the notes on the notice board; what the user wrote is theirs, so --private shows none
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
